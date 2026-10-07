@@ -82,7 +82,12 @@ every two minutes. `PROCESS.md` has the reasoning, and the case against it.
 `spec/` checks that a colophon written now is still there on the next
 request, that a visitor's own colophons are the ones marked as theirs (and
 nobody else's are), and that an empty or over-length line is rejected rather
-than silently corrupted. Whether the tone of what accumulates actually reads
+than silently corrupted. It also checks that a new line reaches every open
+page in under a second, escaped, marked as yours only where you wrote it,
+and never lost or doubled across a reconnect; that 過眼 counts browsers, not
+tabs, and carries nothing but the number; that the write limits hold; that
+seals never land on the figure, the pine, the rocks or the title panel; and
+that a carved seal has to follow its guide. Whether the tone of what accumulates actually reads
 like a colophon — considered, brief, worth adding to a shared object — rather
 than chat is not something a test can check; that's for whoever reads the
 margin to judge.
