@@ -183,7 +183,8 @@ this is the pod's wish list for making the page worthy of the painting. If you
 run short, finish these in order and say in `PROCESS.md` which ones you
 didn't get to, rather than leaving any half-done. Items 13 and 14 come first:
 the seals on the painting are part of the decision above, and they need the
-bigger painting to be readable. Every script-based part here
+bigger painting to be readable. Item 22 builds on item 14 and comes last.
+Every script-based part here
 is progressive enhancement: with JavaScript off, the page still reads and
 writes exactly as it does now.
 
@@ -290,6 +291,92 @@ writes exactly as it does now.
     `f7d259f`; don't repeat that. Check the markers sit on the right parts of
     the image at several widths and zoom levels, and that they're reachable by
     keyboard.
+22. **Visitors carve their own seal** (builds on item 14, so it comes last).
+    Instead of being handed one of the 12 generated glyphs, a visitor with
+    JavaScript can trace their own seal before their first line. The point is
+    the sense of having made it, not drawing skill. Decided:
+    - **Tracing, never free drawing.** The visitor picks a character from a
+      fixed set of a few dozen (choose ones that suit a seal of viewing or
+      keeping, like the 12 already used, and show each one's meaning). Its
+      small-seal (篆書) form shows faintly underneath as a copybook guide, and
+      they trace its strokes. Mouse, touch and pen all work; "start again" and
+      "use a generated seal instead" are always there.
+    - **The server checks it's a tracing.** Nothing on the scroll can ever be
+      deleted, so a drawing that isn't the character must never get in.
+      Ship each guide character with a small precomputed mask of where its
+      strokes are, and accept a seal only if nearly all of its points fall
+      near the guide and together they cover most of it. Tune the thresholds
+      so an honest, wobbly trace passes and a scribble or a different shape
+      fails, and reject a failure with a plain message ("Trace the character's
+      strokes; your seal needs to follow the guide."). Spec: points sampled
+      from the mask pass; a shape drawn outside it fails; an empty seal fails.
+    - **Stored as numbers, rendered from numbers.** Strokes are lists of
+      integer points on a fixed grid (say 0 to 1000), kept in a new table, the
+      same additive way as the rest of the schema, with the chosen character
+      and style. The server validates everything at the boundary: number of
+      strokes, points per stroke, total points, integer range, a known
+      character, a known style. Anything else is rejected, never trimmed, the
+      same as an over-length line. The SVG is built on the server from the
+      validated numbers alone, so no visitor string ever reaches markup
+      (`escapeHtml` still covers every string that does). Spec: a non-number,
+      an out-of-range point, too many strokes or points, and markup in any
+      field are all rejected and not stored.
+    - **Request size.** Set the limits first, then size the request: the seal
+      gets its own route (for example `POST /seal`) with its own body cap,
+      worked out from the maximum valid seal plus headroom and written down
+      with that sum. Every other route keeps the 16 KB cap, and
+      `spec/request-limits.test.ts` stays as it is; add a spec that a body
+      over the seal route's cap is refused before it's parsed.
+    - **Styled like a real seal, whatever the hand.** Thick strokes with round
+      ends, a seal border, and slightly worn, carved edges (an SVG filter,
+      seeded from the seal so it looks the same everywhere, no dependency).
+      The visitor chooses 朱文 (strokes on paper) or 白文 (strokes cut out of a
+      filled square). **Colour still follows item 14:** your own carved seal is
+      vermilion, everyone else's is ink, even though real seals are all red.
+      Say why in the record. It stays sharp at every zoom, on the painting and
+      in the list, and still fits the ≥24 px tap target.
+    - **One seal per browser, fixed once used.** A visitor can redo their
+      seal until the first line that carries it is written; after that it
+      can't be changed, like everything else on the scroll. A colophon keeps
+      the seal it was written with (store that with the line, additively):
+      lines written before a visitor carved keep their generated glyph. The
+      cookie stays the only identity, and the seal token still never appears
+      in any event; live events carry the rendered seal, not the token.
+    - **Without JavaScript**, a visitor gets a generated seal exactly as now,
+      and the desk says carving needs JavaScript. Carved seals made by others
+      still show, since they're rendered on the server. The preview of item 19
+      shows your carved seal once you have one.
+    - **Where the guides come from.** First choice: the CNS11643 Shuowen Jiezi
+      (說文解字) small-seal font from Taiwan's national character database,
+      about 6,700 glyphs mapped to modern Unicode
+      (https://www.cns11643.gov.tw/, listed by GNU Guix as
+      https://packages.guix.gnu.org/packages/font-cns11643-swjz, also in the
+      https://data.gov.tw/dataset/5961 dataset). Read its licence file
+      before using it. Don't use 崇羲篆體
+      (https://xiaoxue.iis.sinica.edu.tw/chongxi/) unless its licence clearly
+      allows extracting glyphs: its page says the font must not be modified.
+      If the CNS font can't be downloaded or its licence is unclear, fall back
+      to Make Me a Hanzi (https://github.com/skishore/makemeahanzi; its stroke
+      graphics are under the Arphic Public License, regular script rather
+      than seal script), or to generated seals only, rather than stopping.
+      Convert only the characters you offer to SVG paths and masks, with a
+      one-off script committed beside its output. It may use any tool on
+      the machine (Python's fontTools, for example) but adds nothing to
+      `package.json`. Don't commit the font itself. Credit the source and its
+      licence on the page and in `README.md`, and copy the licence text into
+      the repo if it requires that.
+    - **The record and the rules.** A traced seal is still not a profile or an
+      avatar: no name, a character from a fixed set, it has to follow the
+      guide, and it can't be changed once used. Say so in `README.md`'s
+      argument and add a rule to `CLAUDE.md` (seals are traced from the guide
+      set only: never free drawing, uploaded images or text) in the commit
+      that adds carving. Add a section to `PROCESS.md` with the decisions above
+      and the case against: a distinctive seal links all of one visitor's
+      lines more strongly than 12 shared glyphs did.
+    - Check it in a real browser with a mouse and with touch emulation at phone
+      width: trace a seal, have the server refuse a scribble, write a line, and
+      watch the carved seal arrive in a second session, on the painting and in
+      the list.
 
 Item 4 already covers the pod's last wish, showing new lines gently without
 moving the reader.
@@ -297,7 +384,7 @@ moving the reader.
 Client code goes in a plain script under `public/`. The static route only
 serves `.avif`, `.css`, `.svg` and `.ico` today, so add the types you need
 (`.js`, `.webp`, a font if any) to its MIME map, and keep the traversal guard
-and `spec/static-files.test.ts` as they are. Check items 13–21 in a real
+and `spec/static-files.test.ts` as they are. Check items 13–22 in a real
 browser at desktop and phone widths too, as in item 11.
 
 ## Keep, and leave alone
@@ -305,7 +392,7 @@ browser at desktop and phone widths too, as in item 11.
 - `node:http` and `node:sqlite`, no framework, **no new dependencies**: SSE
   needs none. Keep `src/` small; this repo's taste is what it leaves out.
 - The painting itself (item 13 may swap in a sharper image of the same work,
-  never a different one) and the look's restraint: items 13–21 refine it, they
+  never a different one) and the look's restraint: items 13–22 refine it, they
   don't replace it with something busier. The 320-character limit (reject, never truncate),
   append-only (no edit, no delete), the seal as an anonymous per-browser token,
   and every rule in `CLAUDE.md`: no accounts, names, likes, replies, threads or
@@ -313,7 +400,8 @@ browser at desktop and phone widths too, as in item 11.
 - The existing specs gate the deploy. Keep them green; change one only where the
   new behaviour truly changes its subject, and say why in the commit.
   `spec/invariants.test.ts` must stay green untouched.
-- The 16 KB request cap, the cookie-shape check and the static-file guard.
+- The 16 KB request cap (only item 22's seal route gets its own, argued cap),
+  the cookie-shape check and the static-file guard.
 - **Never write test lines into the live scroll.** Everyone who visits sees
   them for good. Test only against a scratch `DB_PATH` locally. On the live site,
   after deploying, only check that `/` is 200 and that `/events` connects and
