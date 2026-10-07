@@ -9,16 +9,23 @@ const latestCount = (s: Stream): number =>
   Number(s.events.filter((e) => e.event === "presence").at(-1)?.data ?? NaN);
 
 async function settlesAt(s: Stream, n: number): Promise<void> {
-  await s.waitFor(() => latestCount(s) === n, 6000);
+  await s.waitFor(() => latestCount(s) === n, 8000);
 }
 
-it("counts distinct seals, not tabs, and falls back when one closes", { timeout: 30000 }, async () => {
+it("counts distinct seals, not tabs, and falls back when one closes", { timeout: 45000 }, async () => {
   const watcher = await openStream("/events", { cookie: await newVisitor() });
   try {
     await watcher.next((e) => e.event === "presence");
-    // Let any throttled update from earlier specs land before taking the baseline.
-    await new Promise((r) => setTimeout(r, 2500));
-    const base = latestCount(watcher);
+    // Streams from earlier spec files can still be closing, so take the
+    // baseline only once the count has held still for three seconds.
+    let base = latestCount(watcher);
+    for (let still = 0; still < 3000; still += 250) {
+      await new Promise((r) => setTimeout(r, 250));
+      if (latestCount(watcher) !== base) {
+        base = latestCount(watcher);
+        still = 0;
+      }
+    }
     expect(base).toBeGreaterThanOrEqual(1);
 
     const other = await newVisitor();
