@@ -12,7 +12,9 @@ import { expect, it } from "vitest";
 // silently, the same way a patched line with no test behind it did last time.
 const css = readFileSync("public/styles.css", "utf8");
 
-const ALLOWED_SELECTORS = [".colophon--mine .colophon-seal", ".colophon--mine .colophon-date"];
+// .painting-seal--mine is the same meaning in a second place: your own seal,
+// stamped on the painting (prompt item 14). Everyone else's seal there is ink.
+const ALLOWED_SELECTORS = [".colophon--mine .colophon-seal", ".colophon--mine .colophon-date", ".painting-seal--mine"];
 
 it("var(--seal) marks only a colophon that belongs to the current browser", () => {
   const rules = css

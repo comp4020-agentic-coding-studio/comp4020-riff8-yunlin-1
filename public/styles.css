@@ -60,23 +60,62 @@ h2 {
   font-style: italic;
 }
 
+/* The painting is the widest, tallest thing on the page: it breaks out of
+   the text column, and is never shown taller than the scan's 600 pixels. */
 .scroll-frame {
-  margin: 0 0 2rem;
+  width: min(100vw - 2rem, 80rem);
+  margin: 0 0 2rem calc(50% - min(50vw - 1rem, 40rem));
 }
 
 .scroll-scroller {
-  overflow-x: auto;
-  overflow-y: hidden;
-  height: 9rem;
+  overflow: auto hidden;
+  height: min(36rem, 72vh);
   border: 1px solid var(--rule);
   background: #ece4d3;
 }
 
-.scroll-scroller img {
+.scroll-canvas {
+  position: relative;
+  display: flex;
+  height: 100%;
+  max-height: 600px;
+  aspect-ratio: 7430 / 600;
+  container-type: size;
+}
+
+.scroll-canvas img {
   display: block;
   height: 100%;
   width: auto;
   max-width: none;
+}
+
+.painting-seals {
+  position: absolute;
+  inset: 0;
+}
+
+/* Someone else's seal: ink, thin-bordered, the silk showing through. */
+.painting-seal {
+  position: absolute;
+  display: grid;
+  place-items: center;
+  width: max(1.6rem, 7cqh);
+  aspect-ratio: 1;
+  transform: translate(-50%, -50%);
+  border: 2px solid var(--ink);
+  border-radius: 3px;
+  background: rgb(243 237 225 / 35%);
+  color: var(--ink);
+  font-size: max(1rem, 4.4cqh);
+  line-height: 1;
+  text-decoration: none;
+  opacity: 0.78;
+}
+
+.painting-seal:hover,
+.painting-seal:focus-visible {
+  opacity: 1;
 }
 
 figcaption {
@@ -136,6 +175,11 @@ figcaption {
 }
 
 .colophon--mine .colophon-date {
+  color: var(--seal);
+}
+
+.painting-seal--mine {
+  border-color: var(--seal);
   color: var(--seal);
 }
 
@@ -208,6 +252,10 @@ footer {
     padding: 1rem 0.9rem 3rem;
   }
 
+  .scroll-scroller {
+    height: min(28rem, 60vh);
+  }
+
   .colophon {
     grid-template-columns: 2rem 1fr;
   }
@@ -231,7 +279,7 @@ footer {
   padding: 0.15rem 0.1rem;
   border: 1.5px solid var(--ink-soft);
   border-radius: 2px;
-  font-size: 0.7rem;
+  font-size: 0.85rem;
   line-height: 1.05;
   letter-spacing: 0.05em;
 }
@@ -339,5 +387,72 @@ footer {
 
   .unroll .scroll-window::after {
     display: none;
+  }
+}
+
+.seal-popover {
+  position: fixed;
+  inset: auto;
+  margin: 0;
+  max-width: min(22rem, 100vw - 1rem);
+  padding: 0.8rem 1rem;
+  border: 1px solid var(--ink-soft);
+  background: #fbf8f2;
+  color: var(--ink);
+  box-shadow: 0 0.3rem 1rem rgb(43 39 33 / 18%);
+}
+
+.seal-popover-body {
+  margin: 0 0 0.3rem;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.seal-popover-date {
+  margin: 0 0 0.4rem;
+  font-size: 0.85rem;
+  color: var(--ink-soft);
+}
+
+.painting-seal.arriving {
+  animation: ink-spread-seal 1.5s ease-out both;
+}
+
+.painting-seal.stamped {
+  animation: stamp-seal 0.5s ease-out both;
+}
+
+@keyframes ink-spread-seal {
+  from {
+    opacity: 0;
+    filter: blur(4px);
+  }
+
+  to {
+    opacity: 0.78;
+    filter: blur(0);
+  }
+}
+
+@keyframes stamp-seal {
+  0% {
+    transform: translate(-50%, -50%) scale(1.4);
+    opacity: 0;
+  }
+
+  55% {
+    transform: translate(-50%, -50%) scale(0.92);
+    opacity: 1;
+  }
+
+  100% {
+    transform: translate(-50%, -50%) scale(1);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .painting-seal.arriving,
+  .painting-seal.stamped {
+    animation: none;
   }
 }

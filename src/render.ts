@@ -1,6 +1,7 @@
 import { escapeHtml } from "./html.ts";
 import { sealGlyph } from "./seal.ts";
 import type { Colophon } from "./db.ts";
+import { IMAGE_HEIGHT } from "./spots.ts";
 
 const dateFmt = new Intl.DateTimeFormat("en-AU", {
   day: "numeric",
@@ -69,8 +70,26 @@ export function renderColophon(c: Colophon, viewer: Viewer): string {
 
 // What a live stream carries for one colophon: the rendered line, never the
 // token it was written with.
-export function colophonEvent(c: Colophon, viewer: Viewer): { id: number; html: string } {
-  return { id: c.id, html: renderColophon(c, { token: viewer.token }) };
+export function colophonEvent(c: Colophon, viewer: Viewer): { id: number; html: string; seal: string } {
+  return { id: c.id, html: renderColophon(c, { token: viewer.token }), seal: renderPaintingSeal(c, viewer) };
+}
+
+// The painting ships as three tiles of one 7430×600 image (each under the
+// 2560px a committed image may be), laid edge to edge.
+const TILES = [2477, 2477, 2476];
+const PAINTING_ALT =
+  "A handscroll: Wang Yi's portrait of Yang Zhuxi standing under a pine, with Ni Zan's pine and rocks, the title slip at the right end, and six and a half centuries of collectors' colophons and seals unrolling to the left.";
+
+// A colophon's seal on the painting, where the server placed it. A link down
+// to the line itself, so it works with no script; with one, it opens a small
+// popover instead. Yours is vermilion, everyone else's ink.
+export function renderPaintingSeal(c: Colophon, viewer: Viewer): string {
+  if (c.spot_x === null || c.spot_y === null) return "";
+  const mine = c.token === viewer.token;
+  const date = dateFmt.format(new Date(c.created_at));
+  return `<a class="painting-seal${mine ? " painting-seal--mine" : ""}" href="#c-${c.id}" data-id="${c.id}"
+                   style="left: ${(c.spot_x * 100).toFixed(2)}%; top: ${(c.spot_y * 100).toFixed(2)}%"
+                   aria-label="${mine ? "Your seal" : "A seal"}, ${sealGlyph(c.token)}: a colophon written ${date}"><span aria-hidden="true">${sealGlyph(c.token)}</span></a>`;
 }
 
 export function lookingText(n: number): string {
@@ -113,15 +132,25 @@ export function renderIndex(o: IndexOptions): string {
     <main>
       <figure class="scroll-frame${o.firstVisit ? " unroll" : ""}">
         <div class="scroll-window">
-          <div class="scroll-scroller" tabindex="0" role="img"
-               aria-label="A handscroll painting: Wang Yi's 1363 portrait of Yang Zhuxi standing under a pine, with Ni Zan's rocks and pine, flanked by six and a half centuries of collectors' colophons and seals.">
-            <img src="/public/scroll.avif" alt="" />
+          <div class="scroll-scroller" tabindex="0" role="region" aria-label="The painting, scrolling sideways">
+            <div class="scroll-canvas">
+              ${TILES.map(
+                (t, i) =>
+                  `<img src="/public/scroll-${i}.avif" width="${t}" height="${IMAGE_HEIGHT}" alt="${i === 0 ? PAINTING_ALT : ""}" />`,
+              ).join("\n              ")}
+              <div class="painting-seals">
+                ${o.colophons.map((c) => renderPaintingSeal(c, o.viewer)).join("\n                ")}
+              </div>
+            </div>
           </div>
         </div>
         <figcaption>
           Wang Yi, <cite>Portrait of Yang Zhuxi</cite>, 1363 — Ni Zan painted the pine and
-          rock. Palace Museum, Beijing. Scroll sideways to see the whole thing, including
-          six and a half centuries of colophons already written into its margins.
+          rocks. Ink on paper, Palace Museum, Beijing. The scroll opens at its right end, as a
+          handscroll does; scroll left through six and a half centuries of colophons already
+          written after it. Scan: Palace Museum, via
+          <a href="https://commons.wikimedia.org/wiki/File:%E7%8E%8B%E7%BB%8E%E5%80%AA%E7%93%92%E6%9D%A8%E7%AB%B9%E8%A5%BF%E5%B0%8F%E5%83%8F%E5%8D%B7.png">Wikimedia Commons</a>,
+          public domain.
         </figcaption>
       </figure>
 
