@@ -254,7 +254,9 @@ writes exactly as it does now.
     `prefers-reduced-motion` all of it is off. Nothing moves that the reader
     didn't cause or isn't new.
 18. **Getting around the painting.** A clear hint that the painting scrolls
-    sideways (a fading edge and "scroll →", gone after the first scroll). Zoom
+    sideways (a fading edge and "scroll ← to unroll", pointing left because a
+    handscroll is read from its right end, as in item 10; gone after the
+    first scroll). Zoom
     in and out buttons and a fullscreen mode (the Fullscreen API) so the details
     are reachable on a phone. Zooming keeps the point under the reader's view
     roughly in place, and pinch-zoom still works on touch. All of it works by
