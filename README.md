@@ -55,6 +55,17 @@ is the thing a scroll's viewing seals have always recorded. Names, glyphs or
 anything else that picks out a viewer, typing indicators and "someone is
 writing" stay out.
 
+## Several people at once
+
+When someone writes a line, it appears at the end of the list on every other
+open page within a second, with no reload, and their seal appears on the
+painting at the same moment: vermilion on their own page, ink on everyone
+else's. Nothing the reader is looking at moves. A page that was asleep, or
+lost its connection, picks up the lines it missed when it comes back, each
+once. Come back another day and the lines written since your last visit sit
+under a thin rule. To keep the crowd unhurried, a seal can write one line
+every two minutes. `PROCESS.md` has the reasoning, and the case against it.
+
 ## What's enforced, what's judged
 
 `spec/` checks that a colophon written now is still there on the next

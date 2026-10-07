@@ -272,11 +272,173 @@ quotation marks is a stronger, more specific claim than a paraphrase, and
 needs the source's raw text checked directly, not just the general thrust
 of the argument.
 
-## What's next
+## Crit 9: several people at once
 
-Crit 9 asks for real-time (a colophon appearing in every open session
-within about a second) and one written decision about how the app behaves
-with several people writing at once. The schema here is already the
-smallest version that can carry both: adding a broadcast on write and
-picking what happens when two people submit close together are the two
-concrete next steps, not a redesign.
+This section is an architecture decision record. The decision itself was
+made by the pod that wrote this riff's prompt; what follows is how it was
+built, why it holds up against `README.md`, and the strongest case against
+it.
+
+### Context
+
+`README.md` defines good here as "not a feed, but one object that a small,
+unhurried stream of people add to, permanently, leaving a trace the next
+visitor can actually find." Crit 9 asks for a change one person makes to
+reach everyone else within about a second, without a reload, and for one
+written position on how the app behaves with several people at once. Until
+this crit the scroll only changed when you reloaded it, and nothing on the
+page said anyone else was there.
+
+### Options considered
+
+- **No presence at all.** New lines arrive live; nothing says anyone else
+  is reading. The purest reading of "not a feed".
+- **A live count, 過眼.** One number: how many browsers have the scroll open
+  now. On a real scroll a 過眼 seal records that someone looked, without a
+  name.
+- **Wet ink.** Show a line while it's being written, or at least that
+  someone is writing: the liveliest option, and the closest to chat.
+- **Who is here.** Each viewer's seal glyph shown while they look. Rejected
+  without much weighing: it turns the anonymous seal into a visible
+  identity that follows a person around the page.
+- **Transport: polling, WebSockets or server-sent events.** Polling every
+  second or two is the simplest and works through anything, but meets "within
+  a second" only by hammering a 256 MB machine with requests that are almost
+  always empty. WebSockets are two-way, which this app doesn't need (writing
+  is a plain form post, and has to stay one so the page works without
+  JavaScript), and need an upgrade handshake and framing written by hand on
+  `node:http` with no dependency. SSE is one-way, plain HTTP, reconnects by
+  itself, and carries `Last-Event-ID` so a reconnecting browser says exactly
+  where it got to.
+
+### Decision
+
+Three things are live: new lines, their seals on the painting, and the 過眼
+count. Nothing that says *who* is live. Transport is SSE on `GET /events`
+([`e1963e7`](https://github.com/comp4020-agentic-coding-studio/comp4020-riff8-yunlin-1/commit/e1963e7)).
+
+### Why
+
+A line arriving live is the scroll itself, not news about it: it lands at
+the end of the list, oldest first, the way a scroll unrolls, and nothing the
+reader is looking at moves. The count is the one deliberate exception to
+"nothing about who is here", and it's allowed because it is a number, not a
+list: it names no one and says nothing about what anyone did. `README.md`'s
+argument was changed in the same commit as the count to say so, and
+`CLAUDE.md` gained a rule fixing the line: the anonymous count is allowed;
+names, glyphs, typing indicators and activity feeds never are.
+
+### How the scroll treats many people
+
+These are all about lines, not about who is reading.
+
+- **Two lines at once** both land, once each, in the database's id order
+  for everyone. Nothing can be edited, so there are no edit conflicts to
+  resolve: the only shared state anyone can change is "append a line", and
+  appends don't conflict.
+- **No gap, no double.** The page records the highest id it rendered and
+  opens its stream from there with `?after=`; the browser's own reconnect
+  sends `Last-Event-ID`. The server registers a stream and replays from that
+  id in one synchronous turn, so no write can fall between the replay query
+  and the stream going live, and the client ignores an id it already has.
+  The spec reconnects with a stale id while twelve lines are written
+  concurrently and checks every one arrives exactly once, in order.
+- **One line per seal every two minutes, and 30 a day per address.** Live
+  delivery makes a flood worse: a script posting thousands of lines would
+  fill every open screen in real time, and nothing can be deleted. The seal
+  limit is read from the `colophons` table, so a restart doesn't reset it.
+  The address limit is counted in memory and never stored, so visitors stay
+  anonymous. Both are configurable, and CI raises only the address limit so
+  the load specs can post from one runner ([`e1963e7`](https://github.com/comp4020-agentic-coding-studio/comp4020-riff8-yunlin-1/commit/e1963e7)).
+- **"Since your last visit."** A cookie remembers the highest id a browser
+  was shown; next time, lines other people wrote since then sit under a thin
+  rule. Your own lines are never new to you, and lines that arrived live
+  while the page was open move the cookie forward, since you saw them.
+
+### Seals on the painting
+
+Every colophon now stamps its writer's seal onto the painting, the way real
+collectors' seals accumulate on a scroll
+([`ab88c71`](https://github.com/comp4020-agentic-coding-studio/comp4020-riff8-yunlin-1/commit/ab88c71), [`9d30b82`](https://github.com/comp4020-agentic-coding-studio/comp4020-riff8-yunlin-1/commit/9d30b82)).
+
+- **The server places them, not the visitor.** A new line takes the first
+  free spot from a fixed, scattered list on blank silk and the mounting
+  either side of the painting. The spot is stored with the line as fractions
+  of the image, so a seal never moves.
+- **Off limits:** the figure of Yang Zhuxi and his staff, Ni Zan's pine, the
+  rocks, the inscriptions and seal columns down each edge, and the title
+  slip, all measured on the scan and written into `src/spots.ts`. A spec
+  checks every spot clears them, and it failed on its first run: the
+  figure's box was drawn from the tip of his staff, so it swallowed a patch
+  of blank silk and touched one spot. The box is now two, body and staff.
+- **Two at once:** the spot is chosen inside the same write that saves the
+  line, and `node:sqlite` is one synchronous writer, so concurrent lines
+  always get different spots. Specced with twelve concurrent writes.
+- **When the spots run out**, a new line keeps its seal in the list only.
+  The painting is never covered.
+- **Colour:** your own seals are vermilion, everyone else's ink. Real seals
+  are all red, but here `--seal` means "yours" and nothing else, which is
+  what lets a visitor find their own mark among strangers'.
+
+### Consequences
+
+- **One process is what makes in-memory fan-out correct.** Every write and
+  every open stream meet in `src/live.ts` because `fly.toml` runs exactly one
+  machine. The day there are two, a line written on one never reaches
+  streams held by the other, the 過眼 count splits in half, and the address
+  limit doubles. The fix then is a shared place both can see (SQLite polled
+  by id would do at this scale, Redis pub/sub at a bigger one), not more
+  code here.
+- **Open tabs keep the machine awake.** `auto_stop_machines = "stop"` stops
+  the machine when no requests are in flight, and an open stream is a
+  request in flight, so one forgotten tab keeps the app running (and
+  billing) until it closes. The heartbeat every 15 seconds, which keeps
+  Fly's proxy from dropping a quiet stream, is also what makes this true.
+- **Streams are capped at 200**, then a `503`; a browser that's refused
+  tries again 15 seconds later from the highest id it holds.
+- **The address limit trusts `Fly-Client-IP`**, which Fly's proxy sets on
+  every request. Off Fly, anyone can send that header, so locally it's only
+  as strong as the honesty of the client.
+- **過眼 counts browsers, not people.** One person with three tabs counts
+  once; one person with two browsers counts twice.
+
+### The case against
+
+**For no presence at all.** The count makes a quiet object feel watched.
+Most of the time this scroll will have one reader, and the honest number
+then is a reminder that nobody else is here; the plain wording ("only you
+are looking now") softens it but doesn't change it. And even a bare number
+nudges toward a feed: it moves, it invites checking, and it makes a visit
+about the crowd rather than the painting. For this option to win, `README.md`
+would have to put more weight on the scroll as something read alone, the
+way a collector unrolled it at a desk, and say the trace a visitor finds
+should be the lines, never the people.
+
+**For more presence: wet ink.** The brief asks what several people at once
+feels like, and a count is the least it can feel like. Seeing a line form,
+or just knowing someone is writing, would make two people at the scroll
+together actually *together*, and would make the write limit legible ("the
+ink is still wet" is already a phrase on the page). Against it here: it is
+the one option that shows what an individual is doing, it is chat's
+signature move, and a half-written line is exactly the kind of draft
+`README.md` says should be considered before it goes on the scroll. For it
+to win, `README.md` would have to drop "not a feed" as the core of what
+good means, and argue that a gathering (the 雅集 scholars' gatherings where
+scrolls were unrolled and inscribed together) is the model rather than the
+slow accumulation over centuries.
+
+### Watched in a real browser
+
+Against a scratch `DB_PATH`, with two `agent-browser` sessions open at once:
+the count went from "only you are looking now" to "2 people looking now" in
+both when the second opened, and back to "only you" within four seconds of
+it closing. A line written in one appeared at the end of the other's list
+with no reload, marked as yours only in the writer's, and its seal appeared
+on the painting in both, vermilion in one and ink in the other. With one
+session frozen through Chrome's lifecycle API while the other wrote, the
+line was there on waking. After restarting the server (a deploy's
+disconnect) and writing before the browser reconnected, the line arrived by
+replay, once. The painting unrolled from its right end in a fresh browser at
+1280 and 390 pixels wide and didn't replay on reload, and leaving the page,
+having another seal write twice, and coming back put exactly those two
+lines under "since your last visit".
