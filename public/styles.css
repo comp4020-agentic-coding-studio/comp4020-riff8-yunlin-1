@@ -17,6 +17,13 @@
   box-sizing: border-box;
 }
 
+/* Controls that only work with a script are served hidden and shown by it.
+   Without this, a component's own display: flex would override [hidden] and
+   leave dead buttons on a page with JavaScript off. */
+[hidden] {
+  display: none !important;
+}
+
 /* Paper: a faint fibre texture, drawn by the browser, no image to fetch. */
 html {
   background-color: var(--paper);

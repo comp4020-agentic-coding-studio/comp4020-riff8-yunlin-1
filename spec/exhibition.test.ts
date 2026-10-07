@@ -29,3 +29,12 @@ it("every animation in the stylesheet is switched off under prefers-reduced-moti
   expect(animated.length).toBeGreaterThan(0);
   for (const selector of animated) expect(reduced, `${selector} keeps moving`).toContain(selector);
 });
+
+// Script-only controls (zoom, details, full screen, the scroll hint, the
+// carving tool) are served with the hidden attribute. A component rule such
+// as display: flex outranks the browser's own [hidden] style, and did: with
+// JavaScript off the zoom buttons showed and did nothing. This rule wins.
+it("hidden means hidden, whatever display a component sets", () => {
+  const css = readFileSync("public/styles.css", "utf8");
+  expect(css).toMatch(/\[hidden\]\s*\{\s*display:\s*none\s*!important;?\s*\}/);
+});
