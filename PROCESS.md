@@ -442,3 +442,68 @@ replay, once. The painting unrolled from its right end in a fresh browser at
 1280 and 390 pixels wide and didn't replay on reload, and leaving the page,
 having another seal write twice, and coming back put exactly those two
 lines under "since your last visit".
+
+### The page as an exhibition
+
+The pod's wish list beyond the live layer is all built
+([`abf2b1f`](https://github.com/comp4020-agentic-coding-studio/comp4020-riff8-yunlin-1/commit/abf2b1f)): paper and brocade mounting, ink-toned links,
+colophons set as inscriptions, ink-spread and stamp motion that switches
+off under reduced motion, a scroll hint, zoom and full screen, a character
+count, preview and first-write confirmation, and six marked details with an
+"About this painting" note. Every fact in that note comes from the Palace
+Museum's own page for the scroll, read directly, or Wikipedia on the
+handscroll. Reading the museum's page corrected the caption I'd inherited:
+it said "six and a half centuries of colophons", but the nine colophons are
+all by writers of Wang Yi's own time, and the later centuries left seals.
+The same page lists a seal on the scroll that reads 子韶過眼, a real viewing
+seal of the kind the 過眼 count is named for.
+
+## Carving a seal
+
+Visitors with JavaScript can now carve their own seal
+([`a27cdc2`](https://github.com/comp4020-agentic-coding-studio/comp4020-riff8-yunlin-1/commit/a27cdc2)). These are the decisions, and the case against.
+
+- **Tracing, never free drawing.** A visitor picks one of 31 characters,
+  each shown with its meaning, and traces its small-seal (篆書) form over a
+  faint guide. The guides come from the CNS11643 全字庫說文解字 font. Its
+  usual mirror now returns 404, so I took the file from GNU Guix's
+  content-addressed mirror and checked it against the hash Guix's package
+  pins. The CNS11643 site licenses its fonts under Taiwan's Open Government
+  Data License, which allows editing with a stated attribution; that
+  attribution is on the page, in `README.md` and in
+  `public/guides/LICENSE.md`. 藏 isn't in the font, so it isn't offered.
+- **The server checks it's a tracing.** Each guide ships with a 64 by 64
+  mask of where its strokes are. A seal passes if 93% of the points along
+  its strokes fall within two cells of the guide and together they reach
+  70% of it. I tuned those numbers by simulating every guide against honest
+  traces with wobble, scribbles, circles, traces of only a few strokes, and
+  full traces of every *other* character. The first settings let a tenth of
+  the other-character traces through, mostly near-twins such as 閱 and 閒;
+  the final ones let none through and still pass every honest trace.
+- **Stored as numbers, rendered from numbers.** Strokes are integer points
+  on a 0 to 1000 grid in a new `seals` table, with the character and style.
+  Every field is checked at the boundary and a bad one rejects the whole
+  seal, the same as an over-length line. The SVG is built on the server from
+  those numbers, so no visitor string reaches markup at all.
+- **Request size.** The seal route has its own 24 KB cap: the largest valid
+  seal is 18,172 bytes, plus a quarter for headroom. Every other route keeps
+  16 KB.
+- **Colour still means "yours".** Real seals are all red. Here a visitor's
+  own carved seal is vermilion and everyone else's is ink, because on this
+  page vermilion is how you find your own mark among strangers', and that
+  meaning matters more than fidelity to the ink.
+- **One seal per browser, fixed once used.** A seal can be redone until a
+  line carries it. After that it can't be changed, and lines written before
+  carving keep their generated glyph.
+
+**The case against.** Twelve shared glyphs meant any one seal on the scroll
+stood for a twelfth of everyone who'd written. A carved seal is distinctive:
+a particular hand's wobble over a particular character, so it links all of
+one visitor's lines far more strongly than the generated glyph did. It isn't
+a name, but it's closer to one, and on an object where nothing can be
+deleted that linkage is permanent. Carving is also a pointer gesture, so it
+has no keyboard path; the generated seal is always there instead, but a
+keyboard user can't make the thing a mouse user can. For carving to lose,
+`README.md` would have to say that a visitor's lines should stay unlinkable
+to each other, which it has never quite said.
+
