@@ -1,41 +1,123 @@
 :root {
   --paper: #f3ede1;
+  --paper-light: #fbf8f2;
   --ink: #2b2721;
   --ink-soft: #6b6258;
+  --ink-faint: #a39a8c;
   --seal: #a8402c;
   --rule: #d8cfbd;
+  --silk: #ece4d3;
+  --brocade: #b9a88b;
+  --brocade-dark: #8f7f63;
+  --serif: Georgia, "Times New Roman", Times, "Songti TC", "Noto Serif CJK TC", serif;
+  --cjk: "Songti SC", "STSong", "Noto Serif SC", "Noto Serif TC", "Source Han Serif", "Noto Serif CJK TC", serif;
 }
 
 * {
   box-sizing: border-box;
 }
 
+/* Paper: a faint fibre texture, drawn by the browser, no image to fetch. */
 html {
-  background: var(--paper);
+  background-color: var(--paper);
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='240' height='240'%3E%3Cfilter id='f'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='3' stitchTiles='stitch'/%3E%3CfeColorMatrix values='0 0 0 0 0.42 0 0 0 0 0.38 0 0 0 0 0.32 0 0 0 0.07 0'/%3E%3C/filter%3E%3Crect width='240' height='240' filter='url(%23f)'/%3E%3C/svg%3E");
 }
 
 body {
   margin: 0 auto;
   max-width: 46rem;
   padding: 1.5rem 1.25rem 4rem;
-  background: var(--paper);
   color: var(--ink);
-  font-family: Georgia, "Times New Roman", Times, serif;
+  font-family: var(--serif);
   line-height: 1.55;
 }
 
+/* Links and buttons in ink tones: vermilion is kept for one thing only. */
 a {
-  color: #1a4fa0;
+  color: var(--ink);
+  text-decoration-color: var(--ink-faint);
+  text-decoration-thickness: 1px;
+  text-underline-offset: 0.2em;
+}
+
+a:hover {
+  text-decoration-color: var(--ink);
 }
 
 a:visited {
-  color: #5a3a91;
+  color: #4a4239;
+}
+
+:focus-visible {
+  outline: 2px solid var(--ink);
+  outline-offset: 2px;
 }
 
 h1,
 h2 {
   font-weight: normal;
   line-height: 1.2;
+}
+
+h2 {
+  margin-top: 2.4rem;
+  letter-spacing: 0.01em;
+}
+
+button {
+  font: inherit;
+  font-size: 1rem;
+  padding: 0.5rem 1.1rem;
+  border: 1px solid var(--ink);
+  background: var(--ink);
+  color: var(--paper);
+  width: fit-content;
+  cursor: pointer;
+}
+
+button:hover {
+  background: #46403a;
+}
+
+button:disabled {
+  opacity: 0.6;
+  cursor: progress;
+}
+
+label {
+  font-size: 0.95rem;
+}
+
+textarea {
+  font: inherit;
+  font-size: 1.05rem;
+  padding: 0.7rem 0.8rem;
+  border: 1px solid var(--ink-soft);
+  background: var(--paper-light);
+  color: var(--ink);
+  resize: vertical;
+}
+
+footer {
+  margin-top: 3rem;
+  padding-top: 1rem;
+  border-top: 1px solid var(--rule);
+  color: var(--ink-soft);
+  font-size: 0.9rem;
+}
+
+footer strong {
+  font-family: var(--cjk);
+  font-weight: normal;
+}
+
+.visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
 }
 
 .site-header {
@@ -60,208 +142,7 @@ h2 {
   font-style: italic;
 }
 
-/* The painting is the widest, tallest thing on the page: it breaks out of
-   the text column, and is never shown taller than the scan's 600 pixels. */
-.scroll-frame {
-  width: min(100vw - 2rem, 80rem);
-  margin: 0 0 2rem calc(50% - min(50vw - 1rem, 40rem));
-}
-
-.scroll-scroller {
-  overflow: auto hidden;
-  height: min(36rem, 72vh);
-  border: 1px solid var(--rule);
-  background: #ece4d3;
-}
-
-.scroll-canvas {
-  position: relative;
-  display: flex;
-  height: 100%;
-  max-height: 600px;
-  aspect-ratio: 7430 / 600;
-  container-type: size;
-}
-
-.scroll-canvas img {
-  display: block;
-  height: 100%;
-  width: auto;
-  max-width: none;
-}
-
-.painting-seals {
-  position: absolute;
-  inset: 0;
-}
-
-/* Someone else's seal: ink, thin-bordered, the silk showing through. */
-.painting-seal {
-  position: absolute;
-  display: grid;
-  place-items: center;
-  width: max(1.6rem, 7cqh);
-  aspect-ratio: 1;
-  transform: translate(-50%, -50%);
-  border: 2px solid var(--ink);
-  border-radius: 3px;
-  background: rgb(243 237 225 / 35%);
-  color: var(--ink);
-  font-size: max(1rem, 4.4cqh);
-  line-height: 1;
-  text-decoration: none;
-  opacity: 0.78;
-}
-
-.painting-seal:hover,
-.painting-seal:focus-visible {
-  opacity: 1;
-}
-
-figcaption {
-  margin-top: 0.5rem;
-  font-size: 0.9rem;
-  color: var(--ink-soft);
-}
-
-.section-note {
-  color: var(--ink-soft);
-  font-size: 0.95rem;
-}
-
-.colophon-list {
-  list-style: none;
-  margin: 0;
-  padding: 0;
-}
-
-.colophon {
-  display: grid;
-  grid-template-columns: 2.4rem 1fr;
-  gap: 0 0.9rem;
-  padding: 0.9rem 0;
-  border-bottom: 1px solid var(--rule);
-}
-
-.colophon-seal {
-  grid-row: span 2;
-  display: flex;
-  align-items: flex-start;
-  justify-content: center;
-  font-size: 1.3rem;
-  color: var(--ink-soft);
-  border: 1.5px solid var(--ink-soft);
-  border-radius: 3px;
-  height: 2.2rem;
-  width: 2.2rem;
-  align-self: start;
-}
-
-.colophon--mine .colophon-seal {
-  color: var(--seal);
-  border-color: var(--seal);
-}
-
-.colophon-body {
-  margin: 0 0 0.3rem;
-  white-space: pre-wrap;
-  overflow-wrap: anywhere;
-}
-
-.colophon-date {
-  margin: 0;
-  font-size: 0.85rem;
-  color: var(--ink-soft);
-}
-
-.colophon--mine .colophon-date {
-  color: var(--seal);
-}
-
-.painting-seal--mine {
-  border-color: var(--seal);
-  color: var(--seal);
-}
-
-.empty-note {
-  color: var(--ink-soft);
-  font-style: italic;
-}
-
-form {
-  display: grid;
-  gap: 0.6rem;
-  max-width: 32rem;
-}
-
-label {
-  font-size: 0.95rem;
-}
-
-textarea {
-  font: inherit;
-  font-size: 1rem;
-  padding: 0.6rem;
-  border: 1px solid var(--ink-soft);
-  background: #fbf8f2;
-  color: var(--ink);
-  resize: vertical;
-}
-
-button {
-  font: inherit;
-  font-size: 1rem;
-  padding: 0.5rem 1.1rem;
-  border: 1px solid var(--ink);
-  background: var(--ink);
-  color: var(--paper);
-  width: fit-content;
-  cursor: pointer;
-}
-
-button:hover {
-  background: #46403a;
-}
-
-.form-error {
-  color: var(--ink);
-  font-weight: bold;
-}
-
-footer {
-  margin-top: 3rem;
-  padding-top: 1rem;
-  border-top: 1px solid var(--rule);
-  color: var(--ink-soft);
-  font-size: 0.9rem;
-}
-
-.prose h2 {
-  margin-top: 2rem;
-}
-
-.prose blockquote {
-  margin: 0;
-  padding-left: 1rem;
-  border-left: 3px solid var(--ink-soft);
-  color: var(--ink-soft);
-}
-
-@media (width <= 480px) {
-  body {
-    padding: 1rem 0.9rem 3rem;
-  }
-
-  .scroll-scroller {
-    height: min(28rem, 60vh);
-  }
-
-  .colophon {
-    grid-template-columns: 2rem 1fr;
-  }
-}
-
-/* ---- live layer ---- */
+/* ---- 過眼: how many are looking, in ink, never vermilion ---- */
 
 .guoyan {
   display: flex;
@@ -279,16 +160,357 @@ footer {
   padding: 0.15rem 0.1rem;
   border: 1.5px solid var(--ink-soft);
   border-radius: 2px;
+  font-family: var(--cjk);
   font-size: 0.85rem;
   line-height: 1.05;
   letter-spacing: 0.05em;
+}
+
+/* ---- the painting, mounted ----
+   The widest, tallest thing on the page: it breaks out of the text column
+   and is never shown taller than the scan's 600 pixels unless zoomed. */
+
+.scroll-frame {
+  width: min(100vw - 2rem, 80rem);
+  margin: 0 0 1.5rem calc(50% - min(50vw - 1rem, 40rem));
+}
+
+/* Silk brocade around the painting, the way a scroll is mounted for display. */
+.scroll-window {
+  position: relative;
+  padding: 0.55rem;
+  background:
+    repeating-linear-gradient(45deg, transparent 0 4px, rgb(255 255 255 / 12%) 4px 5px),
+    repeating-linear-gradient(-45deg, transparent 0 4px, rgb(0 0 0 / 7%) 4px 5px),
+    var(--brocade);
+  border: 1px solid var(--brocade-dark);
+  box-shadow: 0 0.2rem 0.8rem rgb(43 39 33 / 12%);
+}
+
+.scroll-scroller {
+  overflow: auto hidden;
+  height: min(36rem, 72vh);
+  border: 2px solid var(--brocade-dark);
+  background: var(--silk);
+  direction: rtl; /* opens at the right end, where a handscroll starts */
+}
+
+.scroll-scroller.zoomed {
+  overflow: auto;
+}
+
+.scroll-scroller > * {
+  direction: ltr;
+}
+
+.scroll-canvas {
+  position: relative;
+  display: flex;
+  height: 100%;
+  max-height: 600px;
+  aspect-ratio: 7430 / 600;
+  container-type: size;
+}
+
+.zoomed .scroll-canvas {
+  max-height: none;
+}
+
+.scroll-canvas img {
+  display: block;
+  height: 100%;
+  width: auto;
+  max-width: none;
+}
+
+/* The layers span the whole canvas, so only their marks take the pointer. */
+.painting-seals,
+.painting-details {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+
+.painting-details {
+  z-index: 1;
+  display: none;
+}
+
+figcaption {
+  margin-top: 0.6rem;
+  font-size: 0.9rem;
+  color: var(--ink-soft);
+}
+
+.scroll-tools {
+  position: absolute;
+  right: 1.2rem;
+  bottom: 1.2rem;
+  z-index: 2;
+  display: flex;
+  gap: 0.3rem;
+}
+
+.scroll-tools button {
+  min-width: 2.4rem;
+  min-height: 2.4rem;
+  padding: 0.25rem 0.6rem;
+  border-color: var(--ink-soft);
+  background: rgb(251 248 242 / 92%);
+  color: var(--ink);
+  font-size: 0.9rem;
+}
+
+.scroll-tools button:hover,
+.scroll-tools button[aria-pressed="true"] {
+  background: var(--ink);
+  color: var(--paper);
+}
+
+.scroll-tools button[data-zoom] {
+  font-size: 1.2rem;
+  line-height: 1;
+}
+
+/* A fading edge and a hint on the side there is more painting to unroll
+   to, until the reader first scrolls. */
+.scroll-hint {
+  position: absolute;
+  left: 0.55rem;
+  top: 0.55rem;
+  bottom: 0.55rem;
+  z-index: 1;
+  display: flex;
+  align-items: center;
+  margin: 0;
+  padding: 0 4rem 0 0.9rem;
+  background: linear-gradient(to right, rgb(236 228 211 / 95%) 30%, transparent);
+  color: var(--ink);
+  font-style: italic;
+  pointer-events: none;
+  transition: opacity 0.6s;
+}
+
+.scroll-hint.gone {
+  opacity: 0;
+}
+
+.scroll-window:fullscreen {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  padding: 0;
+  border: 0;
+  background: var(--silk);
+}
+
+.scroll-window:fullscreen .scroll-scroller {
+  height: min(100vh, 600px);
+  border: 0;
+}
+
+.scroll-window:fullscreen .scroll-scroller.zoomed {
+  height: 100vh;
+}
+
+/* ---- seals on the painting ----
+   Someone else's: ink, thin-bordered, the silk showing through. */
+
+.painting-seal {
+  position: absolute;
+  display: grid;
+  place-items: center;
+  width: max(1.6rem, 7cqh);
+  aspect-ratio: 1;
+  transform: translate(-50%, -50%);
+  border: 2px solid var(--ink);
+  border-radius: 3px;
+  background: rgb(243 237 225 / 35%);
+  color: var(--ink);
+  font-family: var(--cjk);
+  font-size: max(1rem, 4.4cqh);
+  line-height: 1;
+  text-decoration: none;
+  opacity: 0.78;
+  transition: opacity 0.4s;
+  pointer-events: auto;
+}
+
+.painting-seal:hover,
+.painting-seal:focus-visible {
+  opacity: 1;
+}
+
+.painting-seal svg {
+  width: 100%;
+  height: 100%;
+}
+
+/* With the details shown, the seals fade back behind them. */
+.show-details .painting-details {
+  display: block;
+}
+
+.show-details .painting-seal {
+  opacity: 0.2;
+}
+
+.detail-marker {
+  position: absolute;
+  display: grid;
+  place-items: center;
+  width: 1.9rem;
+  height: 1.9rem;
+  transform: translate(-50%, -50%);
+  border: 2px solid var(--paper-light);
+  border-radius: 50%;
+  background: var(--ink);
+  color: var(--paper-light);
+  font-size: 0.95rem;
+  text-decoration: none;
+  box-shadow: 0 0 0 1px var(--ink);
+  pointer-events: auto;
+}
+
+.detail-marker:visited {
+  color: var(--paper-light);
+}
+
+.seal-popover {
+  position: fixed;
+  inset: auto;
+  margin: 0;
+  max-width: min(22rem, 100vw - 1rem);
+  padding: 0.8rem 1rem;
+  border: 1px solid var(--ink-soft);
+  background: var(--paper-light);
+  color: var(--ink);
+  box-shadow: 0 0.3rem 1rem rgb(43 39 33 / 18%);
+}
+
+.seal-popover-body {
+  margin: 0 0 0.3rem;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.seal-popover-date {
+  margin: 0 0 0.4rem;
+  font-size: 0.85rem;
+  color: var(--ink-soft);
+}
+
+/* ---- about the painting ---- */
+
+.about {
+  font-size: 0.97rem;
+}
+
+.details-list {
+  list-style: none;
+  margin: 1rem 0;
+  padding: 0;
+}
+
+.details-list li {
+  margin: 0 0 0.6rem;
+  padding-left: 2rem;
+  text-indent: -2rem;
+}
+
+.details-num {
+  display: inline-grid;
+  place-items: center;
+  width: 1.4rem;
+  height: 1.4rem;
+  margin-right: 0.4rem;
+  border-radius: 50%;
+  background: var(--ink);
+  color: var(--paper-light);
+  font-size: 0.8rem;
+  text-indent: 0;
+}
+
+.sources {
+  color: var(--ink-soft);
+  font-size: 0.88rem;
+}
+
+/* ---- colophons, read as inscriptions ---- */
+
+.section-note {
+  color: var(--ink-soft);
+  font-size: 0.95rem;
+}
+
+.colophon-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.colophon {
+  display: grid;
+  grid-template-columns: 2.6rem 1fr;
+  gap: 0 1.1rem;
+  padding: 1.3rem 0 1.2rem;
+  border-bottom: 1px solid var(--rule);
+}
+
+.colophon-seal {
+  grid-row: span 2;
+  display: grid;
+  place-items: center;
+  width: 2.5rem;
+  height: 2.5rem;
+  border: 2px solid var(--ink-soft);
+  border-radius: 3px;
+  color: var(--ink-soft);
+  font-family: var(--cjk);
+  font-size: 1.45rem;
+  line-height: 1;
+}
+
+.colophon-seal svg {
+  width: 100%;
+  height: 100%;
+}
+
+.colophon-body {
+  margin: 0 0 0.45rem;
+  font-size: 1.08rem;
+  line-height: 1.65;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.colophon-date {
+  margin: 0;
+  color: var(--ink-soft);
+  font-size: 0.8rem;
+  font-variant: small-caps;
+  letter-spacing: 0.06em;
+}
+
+.colophon--mine .colophon-seal {
+  color: var(--seal);
+  border-color: var(--seal);
+}
+
+.colophon--mine .colophon-date {
+  color: var(--seal);
+}
+
+.painting-seal--mine {
+  border-color: var(--seal);
+  color: var(--seal);
 }
 
 .since-rule {
   display: flex;
   align-items: center;
   gap: 0.75rem;
-  padding-top: 1.2rem;
+  padding-top: 1.4rem;
   color: var(--ink-soft);
   font-size: 0.85rem;
   font-style: italic;
@@ -300,34 +522,90 @@ footer {
   border-top: 1px solid var(--ink-soft);
 }
 
-.colophon--new .colophon-body {
+.empty-note {
+  color: var(--ink-soft);
+  font-style: italic;
+}
+
+/* ---- the desk ---- */
+
+form {
+  display: grid;
+  gap: 0.6rem;
+  max-width: 32rem;
+}
+
+.form-error {
   color: var(--ink);
+  font-weight: bold;
 }
 
-/* The painting opens at its right end, where a handscroll starts. */
-.scroll-window {
-  position: relative;
+.desk-count,
+.desk-note,
+.desk-confirm {
+  margin: 0;
+  color: var(--ink-soft);
+  font-size: 0.88rem;
 }
 
-.scroll-scroller {
-  direction: rtl;
+.desk-confirm {
+  color: var(--ink);
+  font-style: italic;
 }
 
-.scroll-scroller > * {
-  direction: ltr;
+.desk-preview {
+  padding: 0.2rem 0.9rem;
+  border: 1px dashed var(--rule);
+  background: rgb(251 248 242 / 60%);
 }
 
-/* First visit only: the server adds .unroll, and the silk is unrolled from
-   the right with a rolled edge travelling left. The end state is the normal
-   page, so if this never runs the painting is simply there. */
+.desk-preview-label {
+  margin: 0.5rem 0 0;
+  color: var(--ink-soft);
+  font-size: 0.78rem;
+  font-variant: small-caps;
+  letter-spacing: 0.06em;
+}
+
+.desk-preview .colophon {
+  border: 0;
+  padding: 0.6rem 0;
+}
+
+.prose h2 {
+  margin-top: 2rem;
+}
+
+.prose blockquote {
+  margin: 0;
+  padding-left: 1rem;
+  border-left: 3px solid var(--ink-soft);
+  color: var(--ink-soft);
+}
+
+/* ---- motion: only what's new, or what the reader caused ---- */
+
+/* First visit only: the server adds .unroll, and the painting is unrolled
+   from its right end, a rolled edge travelling left. The end state is the
+   normal page, so if this never runs the painting is simply there. */
 .unroll .scroll-window::after {
   content: "";
   position: absolute;
   inset: 0 auto 0 0;
+  z-index: 3;
   width: 0;
   pointer-events: none;
   background:
-    linear-gradient(to left, #8a7a63 0, #d9ccb4 0.35rem, #b3a385 0.7rem, transparent 0.75rem),
+    linear-gradient(
+      to left,
+      #6f6048 0,
+      #d9ccb4 0.3rem,
+      #f1e8d6 0.55rem,
+      #b3a385 0.95rem,
+      #6f6048 1.1rem,
+      rgb(43 39 33 / 18%) 1.1rem,
+      transparent 2rem
+    ),
     var(--paper);
   animation: unroll 2.6s cubic-bezier(0.45, 0, 0.25, 1) both;
 }
@@ -354,6 +632,18 @@ footer {
   }
 }
 
+@keyframes ink-spread-seal {
+  from {
+    opacity: 0;
+    filter: blur(4px);
+  }
+
+  to {
+    opacity: 0.78;
+    filter: blur(0);
+  }
+}
+
 @keyframes stamp {
   0% {
     transform: scale(1.35);
@@ -367,70 +657,6 @@ footer {
 
   100% {
     transform: scale(1);
-  }
-}
-
-.arriving {
-  animation: ink-spread 1.5s ease-out both;
-}
-
-.stamped .colophon-seal {
-  animation: stamp 0.5s ease-out both;
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .unroll .scroll-window::after,
-  .arriving,
-  .stamped .colophon-seal {
-    animation: none;
-  }
-
-  .unroll .scroll-window::after {
-    display: none;
-  }
-}
-
-.seal-popover {
-  position: fixed;
-  inset: auto;
-  margin: 0;
-  max-width: min(22rem, 100vw - 1rem);
-  padding: 0.8rem 1rem;
-  border: 1px solid var(--ink-soft);
-  background: #fbf8f2;
-  color: var(--ink);
-  box-shadow: 0 0.3rem 1rem rgb(43 39 33 / 18%);
-}
-
-.seal-popover-body {
-  margin: 0 0 0.3rem;
-  white-space: pre-wrap;
-  overflow-wrap: anywhere;
-}
-
-.seal-popover-date {
-  margin: 0 0 0.4rem;
-  font-size: 0.85rem;
-  color: var(--ink-soft);
-}
-
-.painting-seal.arriving {
-  animation: ink-spread-seal 1.5s ease-out both;
-}
-
-.painting-seal.stamped {
-  animation: stamp-seal 0.5s ease-out both;
-}
-
-@keyframes ink-spread-seal {
-  from {
-    opacity: 0;
-    filter: blur(4px);
-  }
-
-  to {
-    opacity: 0.78;
-    filter: blur(0);
   }
 }
 
@@ -450,9 +676,72 @@ footer {
   }
 }
 
+.arriving {
+  animation: ink-spread 1.5s ease-out both;
+}
+
+.stamped .colophon-seal,
+.colophon--mine:target .colophon-seal {
+  animation: stamp 0.5s ease-out both;
+}
+
+.painting-seal.arriving {
+  animation: ink-spread-seal 1.5s ease-out both;
+}
+
+.painting-seal.stamped {
+  animation: stamp-seal 0.5s ease-out both;
+}
+
 @media (prefers-reduced-motion: reduce) {
+  .unroll .scroll-window::after,
+  .arriving,
+  .stamped .colophon-seal,
+  .colophon--mine:target .colophon-seal,
   .painting-seal.arriving,
   .painting-seal.stamped {
     animation: none;
+  }
+
+  .unroll .scroll-window::after {
+    display: none;
+  }
+
+  .scroll-hint,
+  .painting-seal {
+    transition: none;
+  }
+}
+
+@media (width <= 480px) {
+  body {
+    padding: 1rem 0.9rem 3rem;
+  }
+
+  .scroll-scroller {
+    height: min(28rem, 60vh);
+  }
+
+  .scroll-window {
+    padding: 0.35rem;
+  }
+
+  .scroll-tools {
+    right: 0.7rem;
+    bottom: 0.7rem;
+  }
+
+  .scroll-tools button[data-action] {
+    font-size: 0.8rem;
+  }
+
+  .colophon {
+    grid-template-columns: 2.2rem 1fr;
+    gap: 0 0.8rem;
+  }
+
+  .colophon-seal {
+    width: 2.2rem;
+    height: 2.2rem;
   }
 }

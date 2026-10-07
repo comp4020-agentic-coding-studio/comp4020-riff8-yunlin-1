@@ -78,7 +78,88 @@ export function colophonEvent(c: Colophon, viewer: Viewer): { id: number; html: 
 // 2560px a committed image may be), laid edge to edge.
 const TILES = [2477, 2477, 2476];
 const PAINTING_ALT =
-  "A handscroll: Wang Yi's portrait of Yang Zhuxi standing under a pine, with Ni Zan's pine and rocks, the title slip at the right end, and six and a half centuries of collectors' colophons and seals unrolling to the left.";
+  "A handscroll: Wang Yi's portrait of Yang Zhuxi standing beside a pine, with Ni Zan's pine and rocks, a panel naming the painters at the right end, and nine colophons by their contemporaries unrolling to the left, all scattered with collectors' seals.";
+
+// Marked details on the painting, and the note under it. Every fact here is
+// from the Palace Museum's own page for the scroll (PALACE_MUSEUM below)
+// unless it says otherwise; positions are fractions of the 7430×600 scan.
+const PALACE_MUSEUM = "https://www.dpm.org.cn/collection/paint/228452.html";
+const HANDSCROLL = "https://en.wikipedia.org/wiki/Handscroll";
+
+const DETAILS = [
+  {
+    id: "figure",
+    x: 0.8385,
+    y: 0.47,
+    title: "Yang Zhuxi",
+    text: "The scholar Yang Qian, called Zhuxi, of Songjiang, born in 1283, who never took office and lived as a recluse. Wang Yi drew him in a black cap with a staff in his right hand, the face in pale ink, almost all line.",
+  },
+  {
+    id: "pine",
+    x: 0.7565,
+    y: 0.25,
+    title: "Ni Zan's pine and rocks",
+    text: "Ni Zan added the pine and the rocks around the figure, in dry, pale ink. Wang Yi's portrait came first.",
+  },
+  {
+    id: "inscription",
+    x: 0.7165,
+    y: 0.3,
+    title: "Ni Zan's inscription",
+    text: "“Portrait of the recluse Yang Zhuxi, painted by Wang Yi of Yanling; Ni Zan of Gouwu added the pine and rocks. Second month of the guimao year”: 1363.",
+  },
+  {
+    id: "seals",
+    x: 0.9035,
+    y: 0.55,
+    title: "Collectors' seals",
+    text: "Ming and Qing owners, among them Xiang Yuanbian and Song Luo, pressed 48 seals and 5 half-seals onto the painting itself.",
+  },
+  {
+    id: "title",
+    x: 0.9705,
+    y: 0.12,
+    title: "The panel before the painting",
+    text: "At the right end, where a handscroll starts, a panel names the painters and the writers of the colophons. Among its seals is 子韶過眼, a viewing seal: Zishao looked at this scroll.",
+  },
+  {
+    id: "colophons",
+    x: 0.35,
+    y: 0.08,
+    title: "Nine colophons",
+    text: "Unrolling leftwards, nine Yuan writers, among them Zheng Yuanyou and Yang Weizhen, inscribed the paper after the painting, with more than 80 seals.",
+  },
+];
+
+function renderDetailMarkers(): string {
+  return DETAILS.map(
+    (d, i) =>
+      `<a class="detail-marker" href="#detail-${d.id}" data-detail="${d.id}"
+                 style="left: ${(d.x * 100).toFixed(2)}%; top: ${(d.y * 100).toFixed(2)}%"
+                 aria-label="Detail ${i + 1}: ${escapeHtml(d.title)}"><span aria-hidden="true">${i + 1}</span></a>`,
+  ).join("\n                ");
+}
+
+function renderAbout(): string {
+  return `<section class="about" aria-labelledby="about-heading">
+        <h2 id="about-heading">About this painting</h2>
+        <p>
+          Around 1363 the portrait painter Wang Yi drew the scholar Yang Zhuxi standing with his
+          staff, and the landscape painter Ni Zan added a pine and rocks beside him. It is ink on
+          paper, 27.7 by 86.8 centimetres, and the only surviving painting by Wang Yi. Like every
+          handscroll it is viewed from its right end, unrolled a section at a time, with a
+          colophon section after the painting left for inscriptions: here nine writers of the
+          time added theirs, and the collectors who owned it over the next centuries added
+          their seals. The margin below is the same habit, kept going.
+        </p>
+        <ol class="details-list">
+          ${DETAILS.map((d, i) => `<li id="detail-${d.id}"><span class="details-num" aria-hidden="true">${i + 1}</span> <strong>${escapeHtml(d.title)}.</strong> ${escapeHtml(d.text)}</li>`).join("\n          ")}
+        </ol>
+        <p class="sources">Sources: the <a href="${PALACE_MUSEUM}">Palace Museum's page for the scroll</a>
+          (in Chinese); <a href="${HANDSCROLL}">Wikipedia on the handscroll</a> for how one is
+          viewed and laid out.</p>
+      </section>`;
+}
 
 // A colophon's seal on the painting, where the server placed it. A link down
 // to the line itself, so it works with no script; with one, it opens a small
@@ -90,6 +171,15 @@ export function renderPaintingSeal(c: Colophon, viewer: Viewer): string {
   return `<a class="painting-seal${mine ? " painting-seal--mine" : ""}" href="#c-${c.id}" data-id="${c.id}"
                    style="left: ${(c.spot_x * 100).toFixed(2)}%; top: ${(c.spot_y * 100).toFixed(2)}%"
                    aria-label="${mine ? "Your seal" : "A seal"}, ${sealGlyph(c.token)}: a colophon written ${date}"><span aria-hidden="true">${sealGlyph(c.token)}</span></a>`;
+}
+
+function pace(seconds: number): string {
+  if (seconds <= 0) return "";
+  const minutes = seconds / 60;
+  const words = ["", "one", "two", "three", "four", "five"];
+  if (Number.isInteger(minutes) && minutes >= 1)
+    return minutes === 1 ? "One line a minute." : `One line every ${words[minutes] ?? minutes} minutes.`;
+  return `One line every ${seconds} seconds.`;
 }
 
 export function lookingText(n: number): string {
@@ -132,12 +222,22 @@ export function renderIndex(o: IndexOptions): string {
     <main>
       <figure class="scroll-frame${o.firstVisit ? " unroll" : ""}">
         <div class="scroll-window">
+          <div class="scroll-tools" hidden>
+            <button type="button" data-zoom="out" aria-label="Zoom out">−</button>
+            <button type="button" data-zoom="in" aria-label="Zoom in">+</button>
+            <button type="button" data-action="details" aria-pressed="false">Details</button>
+            <button type="button" data-action="fullscreen" aria-pressed="false">Full screen</button>
+          </div>
+          <p class="scroll-hint" hidden>scroll ← to unroll</p>
           <div class="scroll-scroller" tabindex="0" role="region" aria-label="The painting, scrolling sideways">
             <div class="scroll-canvas">
               ${TILES.map(
                 (t, i) =>
                   `<img src="/public/scroll-${i}.avif" width="${t}" height="${IMAGE_HEIGHT}" alt="${i === 0 ? PAINTING_ALT : ""}" />`,
               ).join("\n              ")}
+              <div class="painting-details">
+                ${renderDetailMarkers()}
+              </div>
               <div class="painting-seals">
                 ${o.colophons.map((c) => renderPaintingSeal(c, o.viewer)).join("\n                ")}
               </div>
@@ -147,12 +247,14 @@ export function renderIndex(o: IndexOptions): string {
         <figcaption>
           Wang Yi, <cite>Portrait of Yang Zhuxi</cite>, 1363 — Ni Zan painted the pine and
           rocks. Ink on paper, Palace Museum, Beijing. The scroll opens at its right end, as a
-          handscroll does; scroll left through six and a half centuries of colophons already
-          written after it. Scan: Palace Museum, via
+          handscroll does; scroll left through the colophons nine of their contemporaries wrote
+          after it. Scan: Palace Museum, via
           <a href="https://commons.wikimedia.org/wiki/File:%E7%8E%8B%E7%BB%8E%E5%80%AA%E7%93%92%E6%9D%A8%E7%AB%B9%E8%A5%BF%E5%B0%8F%E5%83%8F%E5%8D%B7.png">Wikimedia Commons</a>,
           public domain.
         </figcaption>
       </figure>
+
+      ${renderAbout()}
 
       <section aria-labelledby="colophons-heading">
         <h2 id="colophons-heading">Colophons</h2>
@@ -170,7 +272,8 @@ export function renderIndex(o: IndexOptions): string {
         <h2 id="write-heading">Add yours</h2>
         <p class="form-error" role="alert"${o.error ? "" : " hidden"}>${o.error ? escapeHtml(MESSAGES[o.error]) : ""}</p>
         <form method="post" action="/colophons" class="desk"
-              data-interval-seconds="${o.limits.intervalSeconds}" data-ip-daily="${o.limits.ipDaily}">
+              data-interval-seconds="${o.limits.intervalSeconds}" data-ip-daily="${o.limits.ipDaily}"
+              data-has-written="${o.colophons.some((c) => c.token === o.viewer.token)}">
           <label for="body">A line for the margin</label>
           <textarea
             id="body"
@@ -178,7 +281,20 @@ export function renderIndex(o: IndexOptions): string {
             maxlength="${MAX_BODY_LENGTH}"
             rows="3"
             required
+            aria-describedby="desk-note"
           >${escapeHtml(o.draft ?? "")}</textarea>
+          <p class="desk-count" hidden><span aria-hidden="true" class="desk-count-visible"></span><span class="visually-hidden" aria-live="polite"></span></p>
+          <div class="desk-preview" hidden>
+            <p class="desk-preview-label">As it will appear</p>
+            <div class="colophon colophon--mine">
+              <span class="colophon-seal" aria-hidden="true">${sealGlyph(o.viewer.token)}</span>
+              <p class="colophon-body"></p>
+            </div>
+          </div>
+          <p class="desk-note" id="desk-note">Once it's written in, it can't be changed or taken back.
+            ${pace(o.limits.intervalSeconds)}</p>
+          <p class="desk-confirm" hidden>This is your first line here. It stays on the scroll for good —
+            press again to write it in.</p>
           <button type="submit">Write it in</button>
         </form>
       </section>
