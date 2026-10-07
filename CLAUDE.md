@@ -57,5 +57,12 @@ what has to change first, in the same commit.
 - If the accent colour (`--seal`) gets a second meaning beyond "this colophon
   is yours," that's a sign the design has drifted, not a sign to add a second
   colour.
+- Presence is one anonymous number, 過眼: how many distinct browsers have the
+  scroll open now. Never show who is looking (names, seals, glyphs or anything
+  else that identifies a viewer), never a typing indicator or "someone is
+  writing", never an activity feed. A line arriving live is the scroll itself.
+- A colophon becomes HTML in one place, `renderColophon`, for the page and the
+  live event alike. No event ever carries a seal token, and no IP address is
+  ever written to the database.
 - When a check finds a real bug, the fix is a new `spec/` test or a rule in
   this file, not just a patched line with no trace of what went wrong.

@@ -44,3 +44,18 @@ export function sealToken(cookieHeader: string | undefined): { token: string; se
   const token = randomUUID();
   return { token, setCookie: `${SEAL_COOKIE}=${token}; Max-Age=${TEN_YEARS_SECONDS}; Path=/; HttpOnly; SameSite=Lax` };
 }
+
+const SEEN_COOKIE = "seen";
+
+// The highest colophon id this browser was last shown, so a return visit can
+// mark what's been written since. Not HttpOnly: the page's script moves it
+// forward as lines arrive live, since those were seen too. Anything that
+// isn't a plain id reads as a first visit.
+export function seenUpTo(cookieHeader: string | undefined): number | undefined {
+  const raw = parseCookie(cookieHeader, SEEN_COOKIE);
+  return raw !== undefined && /^\d{1,15}$/.test(raw) ? Number(raw) : undefined;
+}
+
+export function seenCookie(id: number): string {
+  return `${SEEN_COOKIE}=${id}; Max-Age=${TEN_YEARS_SECONDS}; Path=/; SameSite=Lax`;
+}

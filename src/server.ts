@@ -1,9 +1,11 @@
-import { createServer } from "node:http";
+import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 import { readFile, readFileSync } from "node:fs";
 import { extname } from "node:path";
-import { addColophon, listColophons } from "./db.ts";
-import { sealToken } from "./cookies.ts";
-import { renderIndex, renderReadme, MAX_BODY_LENGTH } from "./render.ts";
+import { addColophon, listColophons, waitFor } from "./db.ts";
+import { sealToken, seenCookie, seenUpTo } from "./cookies.ts";
+import { clientIp, countWrite, ipHasRoom, IP_DAILY_LIMIT, WRITE_INTERVAL_MS } from "./limits.ts";
+import { broadcast, lookingWith, openStream } from "./live.ts";
+import { colophonEvent, renderIndex, renderReadme, MAX_BODY_LENGTH, MESSAGES, type RejectReason } from "./render.ts";
 import { renderMarkdown } from "./markdown.ts";
 
 const PORT = Number(process.env.PORT ?? 8080);
@@ -14,6 +16,8 @@ const MIME: Record<string, string> = {
   ".css": "text/css; charset=utf-8",
   ".svg": "image/svg+xml",
   ".ico": "image/x-icon",
+  ".js": "text/javascript; charset=utf-8",
+  ".webp": "image/webp",
 };
 
 // A URL-encoded 320-character colophon body never comes close to this — it's
@@ -48,36 +52,92 @@ async function readBody(req: import("node:http").IncomingMessage): Promise<strin
   return tooLarge ? undefined : Buffer.concat(chunks).toString("utf8");
 }
 
+// The page, for a GET or for a rejected POST without a script: a rejection
+// comes back as the page itself, with the message and the visitor's own text
+// still in the textarea, rather than a redirect that would lose it.
+function sendIndex(
+  req: IncomingMessage,
+  res: ServerResponse,
+  cookies: string[],
+  token: string,
+  status: number,
+  extra: { firstVisit?: boolean; error?: RejectReason; draft?: string } = {},
+): void {
+  const colophons = listColophons();
+  const lastId = colophons.at(-1)?.id ?? 0;
+  const html = renderIndex({
+    colophons,
+    viewer: { token, seenUpTo: seenUpTo(req.headers.cookie) },
+    looking: lookingWith(token),
+    firstVisit: extra.firstVisit ?? false,
+    limits: { intervalSeconds: WRITE_INTERVAL_MS / 1000, ipDaily: IP_DAILY_LIMIT },
+    error: extra.error,
+    draft: extra.draft,
+  });
+  res.writeHead(status, {
+    "Content-Type": "text/html; charset=utf-8",
+    "Set-Cookie": [...cookies, seenCookie(lastId)],
+  });
+  res.end(html);
+}
+
+function sendJson(res: ServerResponse, status: number, payload: unknown): void {
+  res.writeHead(status, { "Content-Type": "application/json; charset=utf-8" });
+  res.end(JSON.stringify(payload));
+}
+
+const REJECT_STATUS: Record<RejectReason, number> = { empty: 400, long: 400, wet: 429 };
+
 const server = createServer(async (req, res) => {
   const url = new URL(req.url ?? "/", "http://internal");
   const { token, setCookie } = sealToken(req.headers.cookie);
-  if (setCookie) res.setHeader("Set-Cookie", setCookie);
+  const cookies = setCookie ? [setCookie] : [];
 
   if (req.method === "GET" && url.pathname === "/") {
-    const error = url.searchParams.get("error");
-    res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" });
-    res.end(renderIndex(listColophons(), token, error ?? undefined));
+    sendIndex(req, res, cookies, token, 200, { firstVisit: setCookie !== undefined });
+    return;
+  }
+
+  if (req.method === "GET" && url.pathname === "/events") {
+    if (setCookie) res.setHeader("Set-Cookie", setCookie);
+    openStream(req, res, url, token, listColophons().at(-1)?.id ?? 0);
     return;
   }
 
   if (req.method === "POST" && url.pathname === "/colophons") {
+    if (setCookie) res.setHeader("Set-Cookie", setCookie);
     const raw = await readBody(req);
     if (raw === undefined) {
       res.writeHead(413, { "Content-Type": "text/plain; charset=utf-8" });
       res.end("payload too large");
       return;
     }
-    const params = new URLSearchParams(raw);
-    const body = (params.get("body") ?? "").trim();
+    const wantsJson = (req.headers.accept ?? "").includes("application/json");
+    const draft = new URLSearchParams(raw).get("body") ?? "";
+    const body = draft.trim();
+    const ip = clientIp(req);
 
-    let error: string | undefined;
+    let error: RejectReason | undefined;
     if (body.length === 0) error = "empty";
     else if (body.length > MAX_BODY_LENGTH) error = "long";
+    else if (waitFor(token, WRITE_INTERVAL_MS) > 0 || !ipHasRoom(ip)) error = "wet";
 
-    if (!error) addColophon(token, body);
+    if (error) {
+      if (wantsJson) sendJson(res, REJECT_STATUS[error], { error, message: MESSAGES[error] });
+      else sendIndex(req, res, cookies, token, REJECT_STATUS[error], { error, draft });
+      return;
+    }
 
-    res.writeHead(303, { Location: error ? `/?error=${error}` : "/" });
-    res.end();
+    // Broadcast only once the insert has committed, with the row it returned.
+    const row = addColophon(token, body);
+    countWrite(ip);
+    broadcast(row);
+
+    if (wantsJson) sendJson(res, 201, colophonEvent(row, { token }));
+    else {
+      res.writeHead(303, { Location: `/#c-${row.id}` });
+      res.end();
+    }
     return;
   }
 

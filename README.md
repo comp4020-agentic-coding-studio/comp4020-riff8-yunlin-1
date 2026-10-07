@@ -43,9 +43,17 @@ without disclosing a name. No editing or deleting a colophon once it's
 written: ink doesn't come back off the paper, and a length limit (320
 characters) is the constraint that keeps a visitor considering a line rather
 than typing a paragraph. No likes, no replies, no threading, no feed of other
-people's activity, no notifications. Real-time and a place to write down one
-decision about several people at once both belong to the next two crits, not
-this one; this week is the smallest version of the object itself.
+people's activity, no notifications.
+
+Nothing about *who* else is reading is shown either. The one exception is a
+single number beside the title, 過眼 ("passed before the eyes", the seal a
+real viewer pressed onto a scroll to say they had seen it without saying who
+they were): how many browsers have the scroll open right now. A count is not
+a feed. It names no one and says nothing about what anyone did; it only
+tells a visitor that the object in front of them is being looked at, which
+is the thing a scroll's viewing seals have always recorded. Names, glyphs or
+anything else that picks out a viewer, typing indicators and "someone is
+writing" stay out.
 
 ## What's enforced, what's judged
 
