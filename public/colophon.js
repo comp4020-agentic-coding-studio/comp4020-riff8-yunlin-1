@@ -335,4 +335,155 @@
     form.dataset.hasWritten = "true";
     resetConfirm();
   });
+
+  // ---- carving a seal --------------------------------------------------------
+
+  // Tracing, never free drawing: the chosen character's small-seal form sits
+  // faintly under the pad, and the server only accepts a seal that follows it.
+  const carve = document.querySelector("details.carve");
+  const tool = carve?.querySelector(".carve-tool");
+  if (carve && tool) {
+    carve.querySelector(".carve-nojs").hidden = true;
+    tool.hidden = false;
+
+    const pad = tool.querySelector(".carve-pad");
+    const guidePath = tool.querySelector(".carve-guide");
+    const inkLayer = tool.querySelector(".carve-ink");
+    const status = tool.querySelector(".carve-status");
+    const LIMITS = { strokes: 24, perStroke: 300, total: 1500 };
+    const SVG = "http://www.w3.org/2000/svg";
+    let guides = null;
+    let strokes = [];
+    let active = null; // { id, points, path }
+
+    const chosen = () => tool.querySelector('input[name="carve-char"]:checked')?.value;
+    const style = () => tool.querySelector('input[name="carve-style"]:checked')?.value ?? "zhu";
+    const total = () => strokes.reduce((n, s) => n + s.length, 0);
+    const say = (text) => (status.textContent = text);
+
+    async function loadGuides() {
+      if (guides) return;
+      const res = await fetch("/public/guides/guides.json");
+      guides = await res.json();
+      showGuide();
+    }
+
+    function showGuide() {
+      if (guides) guidePath.setAttribute("d", guides[chosen()]?.path ?? "");
+    }
+
+    function clearInk() {
+      strokes = [];
+      active = null;
+      inkLayer.replaceChildren();
+    }
+
+    carve.addEventListener("toggle", () => {
+      if (carve.open) loadGuides().catch(() => say("The guides didn't load. Try again in a moment."));
+    });
+    if (carve.open) loadGuides();
+
+    tool.querySelector(".carve-chars").addEventListener("change", () => {
+      clearInk();
+      showGuide();
+      say("");
+    });
+
+    function toGrid(e) {
+      const p = new DOMPoint(e.clientX, e.clientY).matrixTransform(pad.getScreenCTM().inverse());
+      const clamp = (v) => Math.max(0, Math.min(1000, Math.round(v)));
+      return [clamp(p.x), clamp(p.y)];
+    }
+
+    function draw(stroke) {
+      stroke.path.setAttribute("d", stroke.points.map(([x, y], i) => `${i ? "L" : "M"}${x} ${y}`).join("") + (stroke.points.length === 1 ? "l0 0.1" : ""));
+    }
+
+    pad.addEventListener("pointerdown", (e) => {
+      if (active || (e.pointerType === "mouse" && e.button !== 0)) return;
+      if (strokes.length >= LIMITS.strokes || total() >= LIMITS.total) {
+        say("That's as many strokes as a seal can hold. Keep it, or start again.");
+        return;
+      }
+      e.preventDefault();
+      pad.setPointerCapture(e.pointerId);
+      const path = document.createElementNS(SVG, "path");
+      inkLayer.append(path);
+      active = { id: e.pointerId, points: [toGrid(e)], path };
+      strokes.push(active.points);
+      draw(active);
+    });
+
+    pad.addEventListener("pointermove", (e) => {
+      if (!active || e.pointerId !== active.id) return;
+      const pt = toGrid(e);
+      const last = active.points.at(-1);
+      if (Math.hypot(pt[0] - last[0], pt[1] - last[1]) < 8) return;
+      if (active.points.length >= LIMITS.perStroke || total() >= LIMITS.total) return;
+      active.points.push(pt);
+      draw(active);
+    });
+
+    // Every way a gesture can end ends the stroke, for this pointer only.
+    for (const type of ["pointerup", "pointercancel", "lostpointercapture"]) {
+      pad.addEventListener(type, (e) => {
+        if (active && e.pointerId === active.id) active = null;
+      });
+    }
+
+    function showOwnSeal(mark) {
+      for (const el of document.querySelectorAll(".desk-preview .colophon-seal, .footer-seal")) el.innerHTML = mark;
+    }
+
+    async function post(payload) {
+      const res = await fetch("/seal", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Accept: "application/json" },
+        body: JSON.stringify(payload),
+      });
+      return { ok: res.ok, status: res.status, body: await res.json().catch(() => ({})) };
+    }
+
+    tool.addEventListener("click", async (e) => {
+      const action = e.target.closest("button[data-carve]")?.dataset.carve;
+      if (!action) return;
+      if (action === "restart") {
+        clearInk();
+        say("");
+      } else if (action === "save") {
+        if (strokes.length === 0) {
+          say("Trace the guide first.");
+          return;
+        }
+        say("Checking it against the guide…");
+        const res = await post({ char: chosen(), style: style(), strokes });
+        if (!res.ok) {
+          say(res.body.message ?? "That seal didn't save. Try again.");
+          return;
+        }
+        showOwnSeal(res.body.mark);
+        carve.dataset.state = "draft";
+        say("Your seal is ready. It goes beside your next line, and can't be changed after that.");
+      } else if (action === "generated") {
+        const res = await post({ clear: true });
+        if (!res.ok) {
+          say(res.body.message ?? "That didn't work. Try again.");
+          return;
+        }
+        showOwnSeal(res.body.mark);
+        carve.dataset.state = "none";
+        clearInk();
+        say("You'll write with the seal chosen for your browser.");
+      }
+    });
+
+    // Once a line carries a carved seal, it's fixed.
+    document.addEventListener("colophon:written", () => {
+      if (carve.dataset.state !== "draft") return;
+      const note = document.createElement("p");
+      note.className = "carve-note";
+      note.textContent = "Your carved seal is on the scroll now, and fixed, like everything else here.";
+      carve.replaceWith(note);
+    });
+  }
 })();

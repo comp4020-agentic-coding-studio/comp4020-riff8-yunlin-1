@@ -745,3 +745,147 @@ form {
     height: 2.2rem;
   }
 }
+
+/* ---- carving a seal ---- */
+
+.colophon-seal:has(svg),
+.painting-seal:has(svg) {
+  border: 0;
+  background: none;
+}
+
+.painting-seal > span {
+  display: grid;
+  place-items: center;
+  width: 100%;
+  height: 100%;
+}
+
+.footer-seal svg {
+  width: 1.4em;
+  height: 1.4em;
+  vertical-align: -0.35em;
+}
+
+.carve {
+  margin: 0 0 1.4rem;
+  max-width: 32rem;
+}
+
+.carve summary {
+  cursor: pointer;
+  text-decoration: underline;
+  text-decoration-color: var(--ink-faint);
+  text-underline-offset: 0.2em;
+}
+
+.carve-nojs,
+.carve-credit,
+.carve-note,
+.carve-status {
+  color: var(--ink-soft);
+  font-size: 0.88rem;
+}
+
+.carve fieldset {
+  margin: 0.8rem 0;
+  padding: 0;
+  border: 0;
+}
+
+.carve legend {
+  margin-bottom: 0.4rem;
+  font-size: 0.95rem;
+}
+
+.carve-chars {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+}
+
+.carve-choice {
+  position: relative;
+  display: grid;
+  justify-items: center;
+  width: 4.6rem;
+  padding: 0.3rem 0.2rem;
+  border: 1px solid var(--rule);
+  background: var(--paper-light);
+  cursor: pointer;
+}
+
+.carve-choice input {
+  position: absolute;
+  opacity: 0;
+}
+
+.carve-choice:has(input:checked) {
+  border-color: var(--ink);
+  box-shadow: inset 0 0 0 1px var(--ink);
+}
+
+.carve-choice:has(input:focus-visible) {
+  outline: 2px solid var(--ink);
+  outline-offset: 2px;
+}
+
+.carve-char {
+  font-family: var(--cjk);
+  font-size: 1.5rem;
+  line-height: 1.2;
+}
+
+.carve-meaning {
+  color: var(--ink-soft);
+  font-size: 0.72rem;
+  line-height: 1.2;
+  text-align: center;
+}
+
+.carve-pad {
+  display: block;
+  width: min(100%, 20rem);
+  aspect-ratio: 1;
+  border: 1px solid var(--ink-soft);
+  touch-action: none;
+  cursor: crosshair;
+}
+
+.carve-pad-bg {
+  fill: var(--paper-light);
+}
+
+.carve-guide {
+  fill: rgb(43 39 33 / 14%);
+}
+
+.carve-ink path {
+  fill: none;
+  stroke: var(--ink);
+  stroke-width: 34;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  opacity: 0.8;
+}
+
+.carve-styles label {
+  display: block;
+  font-size: 0.95rem;
+}
+
+.carve-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+button.quiet {
+  border-color: var(--ink-soft);
+  background: transparent;
+  color: var(--ink);
+}
+
+button.quiet:hover {
+  background: var(--silk);
+}

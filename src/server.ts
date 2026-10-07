@@ -1,7 +1,9 @@
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 import { readFile, readFileSync } from "node:fs";
 import { extname } from "node:path";
-import { addColophon, listColophons, waitFor } from "./db.ts";
+import { addColophon, clearSeal, currentSeal, listColophons, saveSeal, sealFixed, waitFor } from "./db.ts";
+import { checkSeal, MAX_SEAL_BODY_BYTES, renderCarved } from "./carve.ts";
+import { sealGlyph } from "./seal.ts";
 import { sealToken, seenCookie, seenUpTo } from "./cookies.ts";
 import { clientIp, countWrite, ipHasRoom, IP_DAILY_LIMIT, WRITE_INTERVAL_MS } from "./limits.ts";
 import { broadcast, lookingWith, openStream } from "./live.ts";
@@ -18,6 +20,7 @@ const MIME: Record<string, string> = {
   ".ico": "image/x-icon",
   ".js": "text/javascript; charset=utf-8",
   ".webp": "image/webp",
+  ".json": "application/json; charset=utf-8",
 };
 
 // A URL-encoded 320-character colophon body never comes close to this — it's
@@ -37,16 +40,19 @@ const MAX_REQUEST_BODY_BYTES = 16 * 1024;
 // only reading it out fully guarantees the client's own write has finished
 // before it goes to read our response. A stalled or genuinely enormous body
 // is bounded by Node's own default request timeout, not by this function.
-async function readBody(req: import("node:http").IncomingMessage): Promise<string | undefined> {
+async function readBody(
+  req: import("node:http").IncomingMessage,
+  max = MAX_REQUEST_BODY_BYTES,
+): Promise<string | undefined> {
   const declared = Number(req.headers["content-length"]);
-  let tooLarge = Number.isFinite(declared) && declared > MAX_REQUEST_BODY_BYTES;
+  let tooLarge = Number.isFinite(declared) && declared > max;
 
   const chunks: Buffer[] = [];
   let total = 0;
   for await (const chunk of req) {
     const buf = chunk as Buffer;
     total += buf.length;
-    if (total > MAX_REQUEST_BODY_BYTES) tooLarge = true;
+    if (total > max) tooLarge = true;
     if (!tooLarge) chunks.push(buf);
   }
   return tooLarge ? undefined : Buffer.concat(chunks).toString("utf8");
@@ -65,7 +71,10 @@ function sendIndex(
 ): void {
   const colophons = listColophons();
   const lastId = colophons.at(-1)?.id ?? 0;
+  const ownSeal = currentSeal(token);
   const html = renderIndex({
+    ownSeal,
+    ownSealFixed: ownSeal !== undefined && sealFixed(ownSeal),
     colophons,
     viewer: { token, seenUpTo: seenUpTo(req.headers.cookie) },
     looking: lookingWith(token),
@@ -85,6 +94,12 @@ function sendJson(res: ServerResponse, status: number, payload: unknown): void {
   res.writeHead(status, { "Content-Type": "application/json; charset=utf-8" });
   res.end(JSON.stringify(payload));
 }
+
+const SEAL_MESSAGES = {
+  invalid: "That seal couldn't be read. Start again and trace the guide.",
+  untraced: "Trace the character's strokes; your seal needs to follow the guide.",
+  fixed: "Your seal is already on the scroll, so it can't be changed.",
+};
 
 const REJECT_STATUS: Record<RejectReason, number> = { empty: 400, long: 400, wet: 429 };
 
@@ -138,6 +153,47 @@ const server = createServer(async (req, res) => {
       res.writeHead(303, { Location: `/#c-${row.id}` });
       res.end();
     }
+    return;
+  }
+
+  // A carved seal, posted as JSON by the carving script. It has its own body
+  // cap, sized from the seal limits in src/carve.ts; every other route keeps
+  // the 16 KB one.
+  if (req.method === "POST" && url.pathname === "/seal") {
+    if (setCookie) res.setHeader("Set-Cookie", setCookie);
+    const raw = await readBody(req, MAX_SEAL_BODY_BYTES);
+    if (raw === undefined) {
+      res.writeHead(413, { "Content-Type": "text/plain; charset=utf-8" });
+      res.end("payload too large");
+      return;
+    }
+    let input: unknown;
+    try {
+      input = JSON.parse(raw);
+    } catch {
+      sendJson(res, 400, { error: "invalid", message: SEAL_MESSAGES.invalid });
+      return;
+    }
+
+    if (JSON.stringify(input) === '{"clear":true}') {
+      const done = clearSeal(token);
+      if (done === "fixed") sendJson(res, 409, { error: "fixed", message: SEAL_MESSAGES.fixed });
+      else sendJson(res, 200, { mark: sealGlyph(token) });
+      return;
+    }
+
+    const verdict = checkSeal(input);
+    if (!verdict.ok) {
+      sendJson(res, 400, { error: verdict.reason, message: SEAL_MESSAGES[verdict.reason] });
+      return;
+    }
+    const { char, style, strokes } = verdict.seal;
+    const saved = saveSeal(token, char, style, JSON.stringify(strokes));
+    if (saved === "fixed") {
+      sendJson(res, 409, { error: "fixed", message: SEAL_MESSAGES.fixed });
+      return;
+    }
+    sendJson(res, 201, { mark: renderCarved(verdict.seal, "v") });
     return;
   }
 

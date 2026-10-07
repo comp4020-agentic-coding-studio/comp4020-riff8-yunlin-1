@@ -61,6 +61,10 @@ what has to change first, in the same commit.
   scroll open now. Never show who is looking (names, seals, glyphs or anything
   else that identifies a viewer), never a typing indicator or "someone is
   writing", never an activity feed. A line arriving live is the scroll itself.
+- A carved seal is traced from the guide set in `public/guides/` and nothing
+  else: never free drawing, an uploaded image or text. The server checks it
+  follows its guide, stores it as numbers and builds its SVG from those
+  numbers alone; once a line carries it, it's fixed.
 - A colophon becomes HTML in one place, `renderColophon`, for the page and the
   live event alike. No event ever carries a seal token, and no IP address is
   ever written to the database.

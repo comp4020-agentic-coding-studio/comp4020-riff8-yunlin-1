@@ -55,6 +55,17 @@ is the thing a scroll's viewing seals have always recorded. Names, glyphs or
 anything else that picks out a viewer, typing indicators and "someone is
 writing" stay out.
 
+A visitor can carve their own seal before their first line, by tracing the
+old small-seal form of one character from a fixed set over a faint guide.
+That is still not a profile or an avatar: there's no name, the character
+comes from a short list of words viewers and collectors put on their seals,
+the server refuses anything that doesn't follow the guide, and once a line
+carries it, it can't be changed. Without JavaScript a visitor writes with a
+generated seal, as before. The guides are drawn from the
+[CNS11643 全字庫說文解字](https://www.cns11643.gov.tw/) small-seal font
+(數位發展部，CNS11643中文標準交換碼全字庫網站), used under Taiwan's Open
+Government Data License, version 1.0.
+
 ## Several people at once
 
 When someone writes a line, it appears at the end of the list on every other

@@ -1,6 +1,7 @@
 import { escapeHtml } from "./html.ts";
 import { sealGlyph } from "./seal.ts";
-import type { Colophon } from "./db.ts";
+import type { Colophon, SealRow } from "./db.ts";
+import { GUIDES, renderCarved, type SealStyle } from "./carve.ts";
 import { IMAGE_HEIGHT } from "./spots.ts";
 
 const dateFmt = new Intl.DateTimeFormat("en-AU", {
@@ -49,6 +50,24 @@ function layout(title: string, body: string): string {
 `;
 }
 
+// A line's seal: the one its writer carved, if they had by then, otherwise
+// the generated glyph. Rendered from stored numbers or a fixed glyph list,
+// never from visitor text.
+function sealMark(c: Colophon, key: string): string {
+  if (c.seal_char !== null && c.seal_style !== null && c.seal_strokes !== null) {
+    return renderCarved({ char: c.seal_char, style: c.seal_style as SealStyle, strokes: JSON.parse(c.seal_strokes) }, key);
+  }
+  return sealGlyph(c.token);
+}
+
+const sealName = (c: Colophon): string => c.seal_char ?? sealGlyph(c.token);
+
+export function ownSealMark(seal: SealRow | undefined, token: string, key: string): string {
+  return seal
+    ? renderCarved({ char: seal.char, style: seal.style as SealStyle, strokes: JSON.parse(seal.strokes) }, key)
+    : sealGlyph(token);
+}
+
 function isNew(c: Colophon, viewer: Viewer): boolean {
   return viewer.seenUpTo !== undefined && c.id > viewer.seenUpTo && c.token !== viewer.token;
 }
@@ -62,7 +81,7 @@ export function renderColophon(c: Colophon, viewer: Viewer): string {
     .filter(Boolean)
     .join(" ");
   return `<li class="${classes}" id="c-${c.id}" data-id="${c.id}">
-        <span class="colophon-seal" aria-hidden="true">${sealGlyph(c.token)}</span>
+        <span class="colophon-seal" aria-hidden="true">${sealMark(c, `l${c.id}`)}</span>
         <p class="colophon-body">${escapeHtml(c.body)}</p>
         <p class="colophon-date">${dateFmt.format(new Date(c.created_at))}${mine ? " — yours" : ""}</p>
       </li>`;
@@ -170,7 +189,7 @@ export function renderPaintingSeal(c: Colophon, viewer: Viewer): string {
   const date = dateFmt.format(new Date(c.created_at));
   return `<a class="painting-seal${mine ? " painting-seal--mine" : ""}" href="#c-${c.id}" data-id="${c.id}"
                    style="left: ${(c.spot_x * 100).toFixed(2)}%; top: ${(c.spot_y * 100).toFixed(2)}%"
-                   aria-label="${mine ? "Your seal" : "A seal"}, ${sealGlyph(c.token)}: a colophon written ${date}"><span aria-hidden="true">${sealGlyph(c.token)}</span></a>`;
+                   aria-label="${mine ? "Your seal" : "A seal"}, ${sealName(c)}: a colophon written ${date}"><span aria-hidden="true">${sealMark(c, `p${c.id}`)}</span></a>`;
 }
 
 function pace(seconds: number): string {
@@ -206,6 +225,58 @@ export interface IndexOptions {
   limits: { intervalSeconds: number; ipDaily: number };
   error?: RejectReason;
   draft?: string;
+  ownSeal?: SealRow;
+  ownSealFixed: boolean;
+}
+
+// Carving needs a script (tracing is a pointer gesture); without one the desk
+// says so and the visitor writes with a generated seal, as before. Once a line
+// carries a carved seal it's fixed, and there's nothing left to carve.
+function renderCarving(o: IndexOptions): string {
+  if (o.ownSealFixed) {
+    return `<p class="carve-note">Your carved seal is on the scroll now, and fixed, like everything else here.</p>`;
+  }
+  const choices = Object.entries(GUIDES)
+    .map(
+      ([ch, g], i) =>
+        `<label class="carve-choice"><input type="radio" name="carve-char" value="${escapeHtml(ch)}"${(o.ownSeal ? o.ownSeal.char === ch : i === 0) ? " checked" : ""} /><span class="carve-char" lang="zh-Hant">${escapeHtml(ch)}</span><span class="carve-meaning">${escapeHtml(g.meaning)}</span></label>`,
+    )
+    .join("\n              ");
+  return `<details class="carve" data-state="${o.ownSeal ? "draft" : "none"}">
+          <summary>Carve your own seal${o.ownSeal ? " (yours is ready)" : ""}</summary>
+          <p class="carve-nojs">Carving a seal needs JavaScript. Without it you write with a seal
+            chosen for your browser, shown beside your line below.</p>
+          <div class="carve-tool" hidden>
+            <p>Pick a character a viewer or collector might put on a seal, then trace its old
+              small-seal form over the faint guide. It doesn't need to be skilful, only to follow
+              the guide. Once a line carries it, it can't be changed.</p>
+            <fieldset class="carve-chars">
+              <legend>Character</legend>
+              ${choices}
+            </fieldset>
+            <div class="carve-pad-wrap">
+              <svg class="carve-pad" viewBox="0 0 1000 1000" role="img" aria-label="Tracing pad: draw over the guide's strokes">
+                <rect width="1000" height="1000" class="carve-pad-bg" />
+                <path class="carve-guide" d="" />
+                <g class="carve-ink"></g>
+              </svg>
+            </div>
+            <fieldset class="carve-styles">
+              <legend>Style</legend>
+              <label><input type="radio" name="carve-style" value="zhu"${o.ownSeal?.style === "bai" ? "" : " checked"} /> 朱文, strokes standing on paper</label>
+              <label><input type="radio" name="carve-style" value="bai"${o.ownSeal?.style === "bai" ? " checked" : ""} /> 白文, strokes cut out of a square</label>
+            </fieldset>
+            <div class="carve-actions">
+              <button type="button" data-carve="save">Keep this seal</button>
+              <button type="button" data-carve="restart" class="quiet">Start again</button>
+              <button type="button" data-carve="generated" class="quiet">Use a generated seal instead</button>
+            </div>
+            <p class="carve-status" role="status"></p>
+          </div>
+          <p class="carve-credit">Guides: the small-seal (篆書) forms of the
+            <a href="https://www.cns11643.gov.tw/">CNS11643 全字庫說文解字</a> font, from Taiwan's
+            Ministry of Digital Affairs, under the Open Government Data License, version 1.0.</p>
+        </details>`;
 }
 
 export function renderIndex(o: IndexOptions): string {
@@ -271,6 +342,7 @@ export function renderIndex(o: IndexOptions): string {
       <section aria-labelledby="write-heading">
         <h2 id="write-heading">Add yours</h2>
         <p class="form-error" role="alert"${o.error ? "" : " hidden"}>${o.error ? escapeHtml(MESSAGES[o.error]) : ""}</p>
+        ${renderCarving(o)}
         <form method="post" action="/colophons" class="desk"
               data-interval-seconds="${o.limits.intervalSeconds}" data-ip-daily="${o.limits.ipDaily}"
               data-has-written="${o.colophons.some((c) => c.token === o.viewer.token)}">
@@ -287,7 +359,7 @@ export function renderIndex(o: IndexOptions): string {
           <div class="desk-preview" hidden>
             <p class="desk-preview-label">As it will appear</p>
             <div class="colophon colophon--mine">
-              <span class="colophon-seal" aria-hidden="true">${sealGlyph(o.viewer.token)}</span>
+              <span class="colophon-seal" aria-hidden="true">${ownSealMark(o.ownSeal, o.viewer.token, "v")}</span>
               <p class="colophon-body"></p>
             </div>
           </div>
@@ -300,7 +372,7 @@ export function renderIndex(o: IndexOptions): string {
       </section>
     </main>
     <footer>
-      <p>Your seal on this page is <strong>${sealGlyph(o.viewer.token)}</strong> — remembered by
+      <p>Your seal on this page is <strong class="footer-seal">${ownSealMark(o.ownSeal, o.viewer.token, "f")}</strong> — remembered by
         your browser, not by a name. <a href="/readme/">Read more.</a></p>
     </footer>
     <script src="/public/colophon.js" defer></script>
