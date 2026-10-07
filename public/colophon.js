@@ -141,8 +141,16 @@
   popover.setAttribute("role", "dialog");
   document.body.append(popover);
   const canPop = "showPopover" in popover;
+  let opener = null;
+  // Closing it (Escape, or a tap elsewhere) hands focus back to what opened it.
+  popover.addEventListener("toggle", (e) => {
+    if (e.newState === "closed" && opener && (popover.contains(document.activeElement) || document.activeElement === document.body)) {
+      opener.focus({ preventScroll: true });
+    }
+  });
 
   function openPopover(anchor, label, parts, href, linkText) {
+    opener = anchor;
     popover.replaceChildren();
     popover.setAttribute("aria-label", label);
     for (const [cls, text] of parts) {
@@ -154,7 +162,15 @@
     const link = document.createElement("a");
     link.href = href;
     link.textContent = linkText;
-    link.addEventListener("click", () => popover.hidePopover());
+    link.addEventListener("click", () => {
+      opener = null;
+      popover.hidePopover();
+      const target = document.getElementById(href.slice(1));
+      if (target) {
+        target.tabIndex = -1;
+        requestAnimationFrame(() => target.focus({ preventScroll: true }));
+      }
+    });
     popover.append(link);
     popover.showPopover();
     const r = anchor.getBoundingClientRect();
