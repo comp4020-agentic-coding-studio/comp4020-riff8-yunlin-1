@@ -51,12 +51,87 @@
     const seal = fromHtml(event.seal);
     if (!reduceMotion.matches) seal.classList.add(seal.classList.contains("painting-seal--mine") ? "stamped" : "arriving");
     sealLayer.append(seal);
+    document.dispatchEvent(new CustomEvent("spot:taken", { detail: Number(seal.dataset.spot) }));
     return seal;
   }
 
   function showLooking(n) {
     if (!lookingText) return;
     lookingText.textContent = n <= 1 ? "only you are looking now" : `${n} people looking now`;
+  }
+
+  // ---- tabs: about, make your mark, colophons ------------------------------
+
+  // Without a script the three are sections down the page. With one they're
+  // tabs (the ARIA tabs pattern: arrow keys, Home and End move between them),
+  // and the URL hash opens the right one: #mark, #colophons, #c-42, #detail-pine.
+  const tablist = document.querySelector('[role="tablist"]');
+  const tabs = tablist ? [...tablist.querySelectorAll('[role="tab"]')] : [];
+  const panels = tabs.map((t) => document.getElementById(t.getAttribute("aria-controls")));
+
+  function select(tab, { focus = false } = {}) {
+    tabs.forEach((t, i) => {
+      const on = t === tab;
+      t.setAttribute("aria-selected", String(on));
+      t.tabIndex = on ? 0 : -1;
+      panels[i].hidden = !on;
+    });
+    if (focus) tab.focus();
+    document.body.classList.toggle("choosing-spot", tab.id === "tab-mark");
+    const spots = document.querySelector(".painting-spots");
+    if (spots) spots.hidden = tab.id !== "tab-mark";
+  }
+
+  // Opens whichever tab holds the element with this id, and brings it into view.
+  function reveal(id, focus) {
+    const target = document.getElementById(id);
+    if (!target) return false;
+    const panel = target.closest(".tab-panel");
+    const tab = panel && tabs.find((t) => t.getAttribute("aria-controls") === panel.id);
+    if (tab) select(tab);
+    history.replaceState(null, "", `#${id}`);
+    if (target !== panel) {
+      target.scrollIntoView({ block: "nearest", behavior: reduceMotion.matches ? "auto" : "smooth" });
+      if (focus) {
+        target.tabIndex = -1;
+        requestAnimationFrame(() => target.focus({ preventScroll: true }));
+      }
+    }
+    return true;
+  }
+
+  if (tablist) {
+    tablist.hidden = false;
+    document.body.classList.add("tabs-on");
+    panels.forEach((p, i) => {
+      p.setAttribute("role", "tabpanel");
+      p.setAttribute("aria-labelledby", tabs[i].id);
+      p.tabIndex = 0;
+    });
+    tablist.addEventListener("click", (e) => {
+      const tab = e.target.closest('[role="tab"]');
+      if (!tab) return;
+      select(tab);
+      history.replaceState(null, "", `#${tab.getAttribute("aria-controls")}`);
+    });
+    tablist.addEventListener("keydown", (e) => {
+      const i = tabs.indexOf(document.activeElement);
+      if (i === -1) return;
+      const next = { ArrowRight: i + 1, ArrowLeft: i - 1, Home: 0, End: tabs.length - 1 }[e.key];
+      if (next === undefined) return;
+      e.preventDefault();
+      const tab = tabs[(next + tabs.length) % tabs.length];
+      select(tab, { focus: true });
+      history.replaceState(null, "", `#${tab.getAttribute("aria-controls")}`);
+    });
+    const fromHash = () => {
+      const id = decodeURIComponent(location.hash.slice(1));
+      if (!id || !reveal(id, false)) select(tabs[0]);
+    };
+    addEventListener("hashchange", fromHash);
+    // A write refused without a script comes back as the page, on its error.
+    if (errorBox && !errorBox.hidden) reveal("mark", false);
+    else fromHash();
   }
 
   // ---- the live stream ----------------------------------------------------
@@ -110,11 +185,12 @@
       const res = await fetch(form.action, {
         method: "POST",
         headers: { Accept: "application/json", "Content-Type": "application/x-www-form-urlencoded" },
-        body: new URLSearchParams({ body: textarea.value }).toString(),
+        body: new URLSearchParams(new FormData(form)).toString(),
       });
       const payload = await res.json();
       if (!res.ok) {
         showError(payload.message);
+        if (payload.freeSpots) document.dispatchEvent(new CustomEvent("spots:free", { detail: payload.freeSpots }));
         return;
       }
       showError("");
@@ -122,7 +198,8 @@
       textarea.dispatchEvent(new Event("input"));
       const li = addColophon(payload) ?? document.getElementById(`c-${payload.id}`);
       addSeal(payload);
-      li?.scrollIntoView({ block: "nearest", behavior: reduceMotion.matches ? "auto" : "smooth" });
+      // Show the line where it landed, among the others.
+      if (li && !reveal(li.id, true)) li.scrollIntoView({ block: "nearest", behavior: reduceMotion.matches ? "auto" : "smooth" });
       document.dispatchEvent(new CustomEvent("colophon:written", { detail: { event: payload, li } }));
     } catch {
       showError("That didn't reach the scroll. Check your connection and try again.");
@@ -162,14 +239,11 @@
     const link = document.createElement("a");
     link.href = href;
     link.textContent = linkText;
-    link.addEventListener("click", () => {
+    link.addEventListener("click", (e) => {
+      e.preventDefault();
       opener = null;
       popover.hidePopover();
-      const target = document.getElementById(href.slice(1));
-      if (target) {
-        target.tabIndex = -1;
-        requestAnimationFrame(() => target.focus({ preventScroll: true }));
-      }
+      reveal(href.slice(1), true);
     });
     popover.append(link);
     popover.showPopover();
@@ -187,26 +261,16 @@
       const seal = e.target.closest(".painting-seal");
       const marker = e.target.closest(".detail-marker");
       if (seal) {
-        const li = document.getElementById(`c-${seal.dataset.id}`);
-        if (!li) return;
+        if (!document.getElementById(`c-${seal.dataset.id}`)) return;
         e.preventDefault();
-        openPopover(
-          seal,
-          "The colophon behind this seal",
-          [
-            ["seal-popover-body", li.querySelector(".colophon-body").textContent],
-            ["seal-popover-date", li.querySelector(".colophon-date").textContent],
-          ],
-          `#c-${seal.dataset.id}`,
-          "Find it in the list",
-        );
+        reveal(`c-${seal.dataset.id}`, true);
       } else if (marker) {
         const li = document.getElementById(`detail-${marker.dataset.detail}`);
         if (!li) return;
         e.preventDefault();
         const title = li.querySelector("strong").textContent.replace(/\.$/, "");
         const text = li.textContent.replace(/^\s*\d+\s*/, "").replace(li.querySelector("strong").textContent, "").trim();
-        openPopover(marker, title, [["seal-popover-body", text]], `#detail-${marker.dataset.detail}`, "Read it below");
+        openPopover(marker, title, [["seal-popover-body", text]], `#detail-${marker.dataset.detail}`, "Read it in About this painting");
       }
     });
   }
@@ -352,40 +416,91 @@
     resetConfirm();
   });
 
-  // ---- carving a seal --------------------------------------------------------
+  // ---- making a mark: step 1, the seal ------------------------------------
 
-  // Tracing, never free drawing: the chosen character's small-seal form sits
-  // faintly under the pad, and the server only accepts a seal that follows it.
-  const carve = document.querySelector("details.carve");
-  const tool = carve?.querySelector(".carve-tool");
-  if (carve && tool) {
-    carve.querySelector(".carve-nojs").hidden = true;
-    tool.hidden = false;
+  // Choosing a seal only changes the previews; nothing is saved until the
+  // line is written, except a carving, which is kept (and checked against its
+  // guide) when its maker presses "Keep this seal".
+  const step = document.querySelector(".step-seal[data-choice]");
+  const SVG = "http://www.w3.org/2000/svg";
+  let guides = null;
+  async function loadGuides() {
+    if (!guides) guides = await (await fetch("/public/guides/guides.json")).json();
+    return guides;
+  }
 
+  function setPreviews(mark, handle) {
+    for (const el of document.querySelectorAll(".seal-preview-row .seal-preview, .desk-preview .colophon-seal, .spot-preview > span")) {
+      el.innerHTML = mark;
+    }
+    for (const el of document.querySelectorAll(".choice-handle")) el.textContent = handle;
+  }
+
+  function setFooter(mark, handle) {
+    const seal = document.querySelector(".footer-seal");
+    if (seal) seal.innerHTML = mark;
+    for (const el of document.querySelectorAll(".own-handle")) el.textContent = handle;
+  }
+
+  if (step) {
+    const tag = (document.querySelector(".choice-handle")?.textContent ?? "").split("·")[1] ?? "";
+    const generatedGlyph = step.querySelector('.seal-option [lang="zh-Hant"]')?.textContent ?? "";
+    const tool = step.querySelector(".carve-tool");
+    const status = tool.querySelector(".carve-status");
+    const say = (text) => (status.textContent = text);
+    const choice = () => step.querySelector('input[name="seal"]:checked')?.value ?? "generated";
+    const chosenChar = () => step.querySelector('input[name="char"]:checked')?.value;
+    const chosenStyle = () => step.querySelector('input[name="style"]:checked')?.value ?? "zhu";
+    // A carving kept earlier (on this page or a previous visit).
+    let carved = step.dataset.hasCarved === "true" && step.dataset.choice === "carved"
+      ? { mark: step.querySelector(".seal-preview").innerHTML, char: document.querySelector(".choice-handle").textContent.split("·")[0] }
+      : null;
+
+    for (const el of step.querySelectorAll("[data-needs-script]")) el.hidden = false;
+
+    // The character as the font draws it: the same outline the server uses.
+    function readyMark(char, style) {
+      const d = guides?.[char]?.path ?? "";
+      const body =
+        style === "bai"
+          ? `<mask id="cut-c"><rect x="-70" y="-70" width="1140" height="1140" fill="#fff"/><path d="${d}" fill="#000"/></mask><rect x="-62" y="-62" width="1124" height="1124" rx="36" fill="currentColor" mask="url(#cut-c)"/>`
+          : `<rect x="-40" y="-40" width="1080" height="1080" rx="40" fill="none" stroke="currentColor" stroke-width="44"/><path d="${d}" fill="currentColor"/>`;
+      return `<svg class="carved ready" viewBox="-90 -90 1180 1180" aria-hidden="true" focusable="false">${body}</svg>`;
+    }
+
+    async function refresh() {
+      const c = choice();
+      step.dataset.choice = c;
+      tool.hidden = c !== "carved";
+      if (c === "generated") {
+        setPreviews(generatedGlyph, `${generatedGlyph}·${tag}`);
+        return;
+      }
+      await loadGuides();
+      showGuide();
+      if (c === "carved" && carved) setPreviews(carved.mark, `${carved.char}·${tag}`);
+      else setPreviews(readyMark(chosenChar(), chosenStyle()), `${chosenChar()}·${tag}`);
+      if (c === "carved" && !carved) say("Trace the guide, then keep it.");
+    }
+
+    step.addEventListener("change", (e) => {
+      if (e.target.name === "char") clearInk();
+      refresh().catch(() => say("The seal forms didn't load. Try again in a moment."));
+    });
+
+    // Carving: tracing, never free drawing. The chosen character's small-seal
+    // form sits faintly under the pad, and the server only accepts a seal
+    // that follows it.
     const pad = tool.querySelector(".carve-pad");
     const guidePath = tool.querySelector(".carve-guide");
     const inkLayer = tool.querySelector(".carve-ink");
-    const status = tool.querySelector(".carve-status");
     const LIMITS = { strokes: 24, perStroke: 300, total: 1500 };
-    const SVG = "http://www.w3.org/2000/svg";
-    let guides = null;
     let strokes = [];
     let active = null; // { id, points, path }
-
-    const chosen = () => tool.querySelector('input[name="carve-char"]:checked')?.value;
-    const style = () => tool.querySelector('input[name="carve-style"]:checked')?.value ?? "zhu";
-    const total = () => strokes.reduce((n, s) => n + s.length, 0);
-    const say = (text) => (status.textContent = text);
-
-    async function loadGuides() {
-      if (guides) return;
-      const res = await fetch("/public/guides/guides.json");
-      guides = await res.json();
-      showGuide();
-    }
+    const total = () => strokes.reduce((n, st) => n + st.length, 0);
 
     function showGuide() {
-      if (guides) guidePath.setAttribute("d", guides[chosen()]?.path ?? "");
+      if (guides) guidePath.setAttribute("d", guides[chosenChar()]?.path ?? "");
     }
 
     function clearInk() {
@@ -393,17 +508,6 @@
       active = null;
       inkLayer.replaceChildren();
     }
-
-    carve.addEventListener("toggle", () => {
-      if (carve.open) loadGuides().catch(() => say("The guides didn't load. Try again in a moment."));
-    });
-    if (carve.open) loadGuides();
-
-    tool.querySelector(".carve-chars").addEventListener("change", () => {
-      clearInk();
-      showGuide();
-      say("");
-    });
 
     function toGrid(e) {
       const p = new DOMPoint(e.clientX, e.clientY).matrixTransform(pad.getScreenCTM().inverse());
@@ -447,23 +551,8 @@
       });
     }
 
-    function showOwnSeal(mark, handle) {
-      for (const el of document.querySelectorAll(".desk-preview .colophon-seal, .footer-seal")) el.innerHTML = mark;
-      if (handle) for (const el of document.querySelectorAll(".own-handle")) el.textContent = handle;
-    }
-
-    async function post(payload) {
-      const res = await fetch("/seal", {
-        method: "POST",
-        headers: { "Content-Type": "application/json", Accept: "application/json" },
-        body: JSON.stringify(payload),
-      });
-      return { ok: res.ok, status: res.status, body: await res.json().catch(() => ({})) };
-    }
-
     tool.addEventListener("click", async (e) => {
       const action = e.target.closest("button[data-carve]")?.dataset.carve;
-      if (!action) return;
       if (action === "restart") {
         clearInk();
         say("");
@@ -473,34 +562,92 @@
           return;
         }
         say("Checking it against the guide…");
-        const res = await post({ char: chosen(), style: style(), strokes });
+        const res = await fetch("/seal", {
+          method: "POST",
+          headers: { "Content-Type": "application/json", Accept: "application/json" },
+          body: JSON.stringify({ char: chosenChar(), style: chosenStyle(), strokes }),
+        });
+        const body = await res.json().catch(() => ({}));
         if (!res.ok) {
-          say(res.body.message ?? "That seal didn't save. Try again.");
+          say(body.message ?? "That seal didn't save. Try again.");
           return;
         }
-        showOwnSeal(res.body.mark, res.body.handle);
-        carve.dataset.state = "draft";
-        say("Your seal is ready. It goes beside your next line, and can't be changed after that.");
-      } else if (action === "generated") {
-        const res = await post({ clear: true });
-        if (!res.ok) {
-          say(res.body.message ?? "That didn't work. Try again.");
-          return;
-        }
-        showOwnSeal(res.body.mark, res.body.handle);
-        carve.dataset.state = "none";
-        clearInk();
-        say("You'll write with the seal chosen for your browser.");
+        carved = { mark: body.mark, char: chosenChar() };
+        step.dataset.hasCarved = "true";
+        setPreviews(body.mark, body.handle);
+        setFooter(body.mark, body.handle);
+        say("Your seal is kept. It goes beside your next line, and can't be changed after that.");
       }
     });
 
-    // Once a line carries a carved seal, it's fixed.
-    document.addEventListener("colophon:written", () => {
-      if (carve.dataset.state !== "draft") return;
-      const note = document.createElement("p");
-      note.className = "carve-note";
-      note.textContent = "Your carved seal is on the scroll now, and fixed, like everything else here.";
-      carve.replaceWith(note);
+    // Once a line carries a chosen seal, it's fixed.
+    document.addEventListener("colophon:written", (e) => {
+      const li = e.detail.li;
+      const mark = li?.querySelector(".colophon-seal")?.innerHTML;
+      const handle = li?.querySelector(".handle")?.textContent;
+      if (mark && handle) setFooter(mark, handle);
+      if (choice() === "generated" || !mark) return;
+      const fixed = document.createElement("div");
+      fixed.className = "step step-seal";
+      fixed.innerHTML = `<h3 class="step-title"><span class="step-num" aria-hidden="true">1</span> Your seal</h3><p class="carve-note"><span class="seal-preview" aria-hidden="true">${mark}</span> Your seal is on the scroll now, and fixed, like everything else here.</p>`;
+      step.replaceWith(fixed);
     });
+
+    if (step.dataset.choice !== "generated") refresh().catch(() => {});
+  }
+
+  // ---- making a mark: step 2, the spot -----------------------------------
+
+  // The free spots show on the painting while the "Make your mark" tab is
+  // open. Clicking one picks it in the list (which is what's posted, and
+  // what works without a script); the server checks it again as it writes.
+  const spotLayer = document.querySelector(".painting-spots");
+  const spotSelect = document.querySelector("#spot");
+  const spotPreview = spotLayer?.querySelector(".spot-preview");
+
+  function showSpot() {
+    if (!spotLayer || !spotSelect) return;
+    const value = spotSelect.value;
+    for (const m of spotLayer.querySelectorAll(".spot-marker")) m.setAttribute("aria-pressed", String(m.dataset.spot === value));
+    const chosen = spotLayer.querySelector(`.spot-marker[data-spot="${value}"]`);
+    spotPreview.hidden = !chosen;
+    if (chosen) {
+      spotPreview.style.left = chosen.style.left;
+      spotPreview.style.top = chosen.style.top;
+    }
+  }
+
+  function dropSpot(i) {
+    spotLayer?.querySelector(`.spot-marker[data-spot="${i}"]`)?.remove();
+    const option = spotSelect?.querySelector(`option[value="${i}"]`);
+    if (!option) return;
+    const wasChosen = option.selected;
+    option.remove();
+    if (wasChosen) {
+      spotSelect.value = "any";
+      showError("That spot was just taken. Choose another; your line is still here.");
+    }
+    showSpot();
+  }
+
+  if (spotLayer && spotSelect) {
+    document.querySelector(".spot-hint").hidden = false;
+    spotSelect.addEventListener("change", showSpot);
+    spotLayer.addEventListener("click", (e) => {
+      const marker = e.target.closest(".spot-marker");
+      if (!marker) return;
+      spotSelect.value = marker.dataset.spot;
+      showError("");
+      showSpot();
+    });
+    document.addEventListener("spot:taken", (e) => dropSpot(e.detail));
+    document.addEventListener("spots:free", (e) => {
+      for (const o of [...spotSelect.options]) if (o.value !== "any" && !e.detail.includes(Number(o.value))) dropSpot(o.value);
+    });
+    document.addEventListener("colophon:written", () => {
+      spotSelect.value = "any";
+      showSpot();
+    });
+    showSpot();
   }
 })();

@@ -1,8 +1,8 @@
 import { escapeHtml } from "./html.ts";
 import { handle, sealGlyph } from "./seal.ts";
 import type { Colophon, SealRow } from "./db.ts";
-import { GUIDES, renderCarved, type SealStyle } from "./carve.ts";
-import { IMAGE_HEIGHT } from "./spots.ts";
+import { GUIDES, READY_STROKES, renderStored } from "./carve.ts";
+import { IMAGE_HEIGHT, SPOT_PLACES, SPOTS, spotIndex } from "./spots.ts";
 
 const dateFmt = new Intl.DateTimeFormat("en-AU", {
   day: "numeric",
@@ -13,12 +13,17 @@ const dateFmt = new Intl.DateTimeFormat("en-AU", {
 
 export const MAX_BODY_LENGTH = 320;
 
-export type RejectReason = "empty" | "long" | "wet";
+export type RejectReason = "empty" | "long" | "wet" | "taken" | "spot" | "seal" | "fixed" | "uncarved";
 
 export const MESSAGES: Record<RejectReason, string> = {
   empty: "A colophon needs at least a few words.",
   long: `Keep it to ${MAX_BODY_LENGTH} characters — the margin is not infinite.`,
   wet: "The ink is still wet on your last line. Give it a few minutes.",
+  taken: "That spot was just taken. Choose another; your line is still here.",
+  spot: "That isn't a spot a seal can go. Choose one of the free spots.",
+  seal: "Choose a seal: yours, a ready-made one, or one you've carved.",
+  fixed: "Your seal is already on the scroll, so it can't be changed.",
+  uncarved: "Carve your seal and keep it first, or choose another.",
 };
 
 // Who is reading a page or a stream: their own seal token (never sent back
@@ -29,7 +34,7 @@ export interface Viewer {
   seenUpTo?: number;
 }
 
-function layout(title: string, body: string): string {
+function layout(title: string, body: string, bodyClass = ""): string {
   return `<!doctype html>
 <html lang="en-AU">
   <head>
@@ -43,7 +48,7 @@ function layout(title: string, body: string): string {
     <link rel="icon" href="/public/favicon.svg" type="image/svg+xml" />
     <link rel="stylesheet" href="/public/styles.css" />
   </head>
-  <body>
+  <body${bodyClass ? ` class="${bodyClass}"` : ""}>
     ${body}
   </body>
 </html>
@@ -55,7 +60,7 @@ function layout(title: string, body: string): string {
 // never from visitor text.
 function sealMark(c: Colophon, key: string): string {
   if (c.seal_char !== null && c.seal_style !== null && c.seal_strokes !== null) {
-    return renderCarved({ char: c.seal_char, style: c.seal_style as SealStyle, strokes: JSON.parse(c.seal_strokes) }, key);
+    return renderStored(c.seal_char, c.seal_style, c.seal_strokes, key);
   }
   return sealGlyph(c.token);
 }
@@ -70,9 +75,7 @@ const handleTag = (h: string): string => `<span class="handle" lang="zh-Hant">${
 export const colophonHandle = (c: Colophon): string => handle(c.token, sealName(c));
 
 export function ownSealMark(seal: SealRow | undefined, token: string, key: string): string {
-  return seal
-    ? renderCarved({ char: seal.char, style: seal.style as SealStyle, strokes: JSON.parse(seal.strokes) }, key)
-    : sealGlyph(token);
+  return seal ? renderStored(seal.char, seal.style, seal.strokes, key) : sealGlyph(token);
 }
 
 function isNew(c: Colophon, viewer: Viewer): boolean {
@@ -167,7 +170,7 @@ function renderDetailMarkers(): string {
 }
 
 function renderAbout(): string {
-  return `<section class="about" aria-labelledby="about-heading">
+  return `<div class="about">
         <h2 id="about-heading">About this painting</h2>
         <p>
           Around 1363 the portrait painter Wang Yi drew the scholar Yang Zhuxi standing with his
@@ -184,7 +187,7 @@ function renderAbout(): string {
         <p class="sources">Sources: the <a href="${PALACE_MUSEUM}">Palace Museum's page for the scroll</a>
           (in Chinese); <a href="${HANDSCROLL}">Wikipedia on the handscroll</a> for how one is
           viewed and laid out.</p>
-      </section>`;
+      </div>`;
 }
 
 // A colophon's seal on the painting, where the server placed it. A link down
@@ -194,7 +197,7 @@ export function renderPaintingSeal(c: Colophon, viewer: Viewer): string {
   if (c.spot_x === null || c.spot_y === null) return "";
   const mine = c.token === viewer.token;
   const date = dateFmt.format(new Date(c.created_at));
-  return `<a class="painting-seal${mine ? " painting-seal--mine" : ""}" href="#c-${c.id}" data-id="${c.id}"
+  return `<a class="painting-seal${mine ? " painting-seal--mine" : ""}" href="#c-${c.id}" data-id="${c.id}" data-spot="${spotIndex({ x: c.spot_x, y: c.spot_y })}"
                    style="left: ${(c.spot_x * 100).toFixed(2)}%; top: ${(c.spot_y * 100).toFixed(2)}%"
                    aria-label="${mine ? "Your seal" : "A seal"}, ${escapeHtml(colophonHandle(c))}: a colophon written ${date}"><span aria-hidden="true">${sealMark(c, `p${c.id}`)}</span></a>`;
 }
@@ -232,35 +235,94 @@ export interface IndexOptions {
   limits: { intervalSeconds: number; ipDaily: number };
   error?: RejectReason;
   draft?: string;
+  form?: URLSearchParams; // the choices a rejected write came back with
   ownSeal?: SealRow;
   ownSealFixed: boolean;
+  freeSpots: number[];
 }
 
-// Carving needs a script (tracing is a pointer gesture); without one the desk
-// says so and the visitor writes with a generated seal, as before. Once a line
-// carries a carved seal it's fixed, and there's nothing left to carve.
-function renderCarving(o: IndexOptions): string {
+type Choice = "generated" | "ready" | "carved";
+
+const isReady = (seal: SealRow | undefined): boolean => seal?.strokes === READY_STROKES;
+const FIRST_CHAR = Object.keys(GUIDES)[0]!;
+
+// What step 1 starts on: what a rejected write asked for, otherwise the seal
+// the visitor already has.
+function choices(o: IndexOptions): { choice: Choice; char: string; style: string } {
+  const asked = o.form?.get("seal");
+  const choice: Choice =
+    asked === "generated" || asked === "ready" || asked === "carved"
+      ? asked
+      : o.ownSeal
+        ? isReady(o.ownSeal)
+          ? "ready"
+          : "carved"
+        : "generated";
+  const char = o.form?.get("char") ?? o.ownSeal?.char ?? FIRST_CHAR;
+  const style = o.form?.get("style") ?? o.ownSeal?.style ?? "zhu";
+  return { choice, char: Object.hasOwn(GUIDES, char) ? char : FIRST_CHAR, style: style === "bai" ? "bai" : "zhu" };
+}
+
+// The mark step 1 starts with, and the one the previews show.
+function chosenMark(o: IndexOptions, key: string): string {
+  const { choice, char, style } = choices(o);
+  if (o.ownSealFixed || choice === "carved") return ownSealMark(o.ownSeal, o.viewer.token, key);
+  if (choice === "ready") return renderStored(char, style, READY_STROKES, key);
+  return sealGlyph(o.viewer.token);
+}
+
+function chosenHandle(o: IndexOptions): string {
+  const { choice, char } = choices(o);
+  if (o.ownSealFixed || choice === "carved") return handle(o.viewer.token, o.ownSeal?.char);
+  return handle(o.viewer.token, choice === "ready" ? char : undefined);
+}
+
+// Step 1. A ready-made seal and a carved one share the character and style
+// pickers: ready-made is the character as the font draws it, carved is the
+// visitor's own tracing of it. Carving is a pointer gesture, so it needs a
+// script; without one its option and pad stay hidden and the other two work.
+function renderSealStep(o: IndexOptions): string {
   if (o.ownSealFixed) {
-    return `<p class="carve-note">Your carved seal is on the scroll now, and fixed, like everything else here.</p>`;
+    return `<div class="step step-seal">
+          <h3 class="step-title"><span class="step-num" aria-hidden="true">1</span> Your seal</h3>
+          <p class="carve-note"><span class="seal-preview" aria-hidden="true">${ownSealMark(o.ownSeal, o.viewer.token, "s")}</span>
+            Your seal is on the scroll now, and fixed, like everything else here.</p>
+        </div>`;
   }
-  const choices = Object.entries(GUIDES)
+  const { choice, char, style } = choices(o);
+  const chars = Object.entries(GUIDES)
     .map(
-      ([ch, g], i) =>
-        `<label class="carve-choice"><input type="radio" name="carve-char" value="${escapeHtml(ch)}"${(o.ownSeal ? o.ownSeal.char === ch : i === 0) ? " checked" : ""} /><span class="carve-char" lang="zh-Hant">${escapeHtml(ch)}</span><span class="carve-meaning">${escapeHtml(g.meaning)}</span></label>`,
+      ([ch, g]) =>
+        `<label class="carve-choice"><input type="radio" name="char" value="${escapeHtml(ch)}"${ch === char ? " checked" : ""} /><span class="carve-char" lang="zh-Hant">${escapeHtml(ch)}</span><span class="carve-meaning">${escapeHtml(g.meaning)}</span></label>`,
     )
     .join("\n              ");
-  return `<details class="carve" data-state="${o.ownSeal ? "draft" : "none"}">
-          <summary>Carve your own seal${o.ownSeal ? " (yours is ready)" : ""}</summary>
-          <p class="carve-nojs">Carving a seal needs JavaScript. Without it you write with a seal
-            chosen for your browser, shown beside your line below.</p>
-          <div class="carve-tool" hidden>
-            <p>Pick a character a viewer or collector might put on a seal, then trace its old
-              small-seal form over the faint guide. It doesn't need to be skilful, only to follow
-              the guide. Once a line carries it, it can't be changed.</p>
+  const radio = (value: Choice, label: string, extra = ""): string =>
+    `<label class="seal-option"${extra}><input type="radio" name="seal" value="${value}"${choice === value ? " checked" : ""} /> ${label}</label>`;
+  return `<fieldset class="step step-seal" data-choice="${choice}" data-has-carved="${o.ownSeal !== undefined && !isReady(o.ownSeal)}">
+          <legend class="step-title"><span class="step-num" aria-hidden="true">1</span> Choose your seal</legend>
+          <div class="seal-options">
+            ${radio("generated", `The seal chosen for your browser, <span lang="zh-Hant">${sealGlyph(o.viewer.token)}</span>`)}
+            ${radio("ready", "A ready-made seal: a character and a style")}
+            ${radio("carved", "Carve your own: trace a character yourself", ' data-needs-script hidden')}
+          </div>
+          <div class="seal-preview-row">
+            <span class="seal-preview" aria-hidden="true">${chosenMark(o, "s")}</span>
+            <span class="handle choice-handle" lang="zh-Hant">${escapeHtml(chosenHandle(o))}</span>
+          </div>
+          <div class="seal-pickers">
             <fieldset class="carve-chars">
               <legend>Character</legend>
-              ${choices}
+              ${chars}
             </fieldset>
+            <fieldset class="carve-styles">
+              <legend>Style</legend>
+              <label><input type="radio" name="style" value="zhu"${style === "zhu" ? " checked" : ""} /> 朱文, strokes standing on paper</label>
+              <label><input type="radio" name="style" value="bai"${style === "bai" ? " checked" : ""} /> 白文, strokes cut out of a square</label>
+            </fieldset>
+          </div>
+          <div class="carve-tool" hidden>
+            <p>Trace the character's old small-seal form over the faint guide. It doesn't need to
+              be skilful, only to follow the guide. Once a line carries it, it can't be changed.</p>
             <div class="carve-pad-wrap">
               <svg class="carve-pad" viewBox="0 0 1000 1000" role="img" aria-label="Tracing pad: draw over the guide's strokes">
                 <rect width="1000" height="1000" class="carve-pad-bg" />
@@ -268,22 +330,67 @@ function renderCarving(o: IndexOptions): string {
                 <g class="carve-ink"></g>
               </svg>
             </div>
-            <fieldset class="carve-styles">
-              <legend>Style</legend>
-              <label><input type="radio" name="carve-style" value="zhu"${o.ownSeal?.style === "bai" ? "" : " checked"} /> 朱文, strokes standing on paper</label>
-              <label><input type="radio" name="carve-style" value="bai"${o.ownSeal?.style === "bai" ? " checked" : ""} /> 白文, strokes cut out of a square</label>
-            </fieldset>
             <div class="carve-actions">
               <button type="button" data-carve="save">Keep this seal</button>
               <button type="button" data-carve="restart" class="quiet">Start again</button>
-              <button type="button" data-carve="generated" class="quiet">Use a generated seal instead</button>
             </div>
             <p class="carve-status" role="status"></p>
           </div>
-          <p class="carve-credit">Guides: the small-seal (篆書) forms of the
+          <p class="carve-credit">Seal forms: the small-seal (篆書) characters of the
             <a href="https://www.cns11643.gov.tw/">CNS11643 全字庫說文解字</a> font, from Taiwan's
             Ministry of Digital Affairs, under the Open Government Data License, version 1.0.</p>
-        </details>`;
+        </fieldset>`;
+}
+
+const spotLabel = (i: number): string => `${SPOT_PLACES[i]}, spot ${i + 1}`;
+
+// Step 2. Without a script it's a list of the free spots; with one, the
+// free spots also show on the painting to click, and the list follows. The
+// server checks the spot again inside the write.
+function renderSpotStep(o: IndexOptions): string {
+  if (o.freeSpots.length === 0) {
+    return `<div class="step step-spot">
+          <h3 class="step-title"><span class="step-num" aria-hidden="true">2</span> Where it goes</h3>
+          <p class="step-note">Every spot on the painting is taken, so your seal goes beside your
+            line in the list, and the painting stays uncovered.</p>
+        </div>`;
+  }
+  const asked = o.error === "taken" || o.error === "spot" ? undefined : o.form?.get("spot");
+  const options = o.freeSpots
+    .map((i) => `<option value="${i}"${asked === String(i) ? " selected" : ""}>${escapeHtml(spotLabel(i))}</option>`)
+    .join("\n              ");
+  return `<div class="step step-spot">
+          <h3 class="step-title"><span class="step-num" aria-hidden="true">2</span> Choose where it goes</h3>
+          <p class="step-note" id="spot-note">Only blank silk, clear of the figure, the pine, the rocks and
+            other seals. <span class="spot-hint" hidden>Click a dotted square on the painting, or pick from the list.</span></p>
+          <label for="spot">Spot</label>
+          <select id="spot" name="spot" aria-describedby="spot-note">
+            <option value="any">The first free spot</option>
+              ${options}
+          </select>
+        </div>`;
+}
+
+// Free spots on the painting, to click. Script only: served hidden.
+function renderSpotMarkers(o: IndexOptions): string {
+  return o.freeSpots
+    .map((i) => {
+      const s = SPOTS[i]!;
+      return `<button type="button" class="spot-marker" data-spot="${i}" aria-pressed="false"
+                 style="left: ${(s.x * 100).toFixed(2)}%; top: ${(s.y * 100).toFixed(2)}%"
+                 aria-label="Put your seal here: ${escapeHtml(spotLabel(i))}"></button>`;
+    })
+    .join("\n                ");
+}
+
+function renderTabs(): string {
+  const tab = (id: string, label: string, selected: boolean): string =>
+    `<button type="button" role="tab" id="tab-${id}" aria-controls="${id}" aria-selected="${selected}" tabindex="${selected ? 0 : -1}">${label}</button>`;
+  return `<div class="tabs" role="tablist" aria-label="About the painting, making your mark, and the colophons" hidden>
+          ${tab("about", "About this painting", true)}
+          ${tab("mark", "Make your mark", false)}
+          ${tab("colophons", "Colophons", false)}
+        </div>`;
 }
 
 export function renderIndex(o: IndexOptions): string {
@@ -297,7 +404,8 @@ export function renderIndex(o: IndexOptions): string {
         <span class="guoyan-text" aria-live="polite">${lookingText(o.looking)}</span></p>
       <p><a href="/readme/">what good means here</a></p>
     </header>
-    <main>
+    <main class="exhibit">
+      <div class="panel panel-painting">
       <figure class="scroll-frame${o.firstVisit ? " unroll" : ""}">
         <div class="scroll-window">
           <div class="scroll-tools" hidden>
@@ -319,6 +427,10 @@ export function renderIndex(o: IndexOptions): string {
               <div class="painting-seals">
                 ${o.colophons.map((c) => renderPaintingSeal(c, o.viewer)).join("\n                ")}
               </div>
+              <div class="painting-spots" hidden>
+                ${renderSpotMarkers(o)}
+                <span class="painting-seal painting-seal--mine spot-preview" aria-hidden="true" hidden><span>${chosenMark(o, "p")}</span></span>
+              </div>
             </div>
           </div>
         </div>
@@ -331,53 +443,65 @@ export function renderIndex(o: IndexOptions): string {
           public domain.
         </figcaption>
       </figure>
+      </div>
 
-      ${renderAbout()}
+      <div class="panel panel-side">
+        ${renderTabs()}
 
-      <section aria-labelledby="colophons-heading">
-        <h2 id="colophons-heading">Colophons</h2>
-        <p class="section-note">
-          Oldest first, the way a scroll unrolls. Yours is marked once it's here — nothing
-          you write can be edited or taken back, the same as ink.
-        </p>
-        <ol class="colophon-list" data-last-id="${lastId}">
-          ${colophonList(o.colophons, o.viewer)}
-        </ol>
-        ${o.colophons.length === 0 ? `<p class="empty-note">No one has written in the margin yet.</p>` : ""}
-      </section>
+        <section id="about" class="tab-panel" aria-labelledby="about-heading">
+        ${renderAbout()}
+        </section>
 
-      <section aria-labelledby="write-heading">
-        <h2 id="write-heading">Add yours</h2>
-        <p class="form-error" role="alert"${o.error ? "" : " hidden"}>${o.error ? escapeHtml(MESSAGES[o.error]) : ""}</p>
-        ${renderCarving(o)}
-        <form method="post" action="/colophons" class="desk"
-              data-interval-seconds="${o.limits.intervalSeconds}" data-ip-daily="${o.limits.ipDaily}"
-              data-has-written="${o.colophons.some((c) => c.token === o.viewer.token)}">
-          <label for="body">A line for the margin</label>
-          <textarea
-            id="body"
-            name="body"
-            maxlength="${MAX_BODY_LENGTH}"
-            rows="3"
-            required
-            aria-describedby="desk-note"
-          >${escapeHtml(o.draft ?? "")}</textarea>
-          <p class="desk-count" hidden><span aria-hidden="true" class="desk-count-visible"></span><span class="visually-hidden" aria-live="polite"></span></p>
-          <div class="desk-preview" hidden>
-            <p class="desk-preview-label">As it will appear</p>
-            <div class="colophon colophon--mine">
-              <span class="colophon-seal" aria-hidden="true">${ownSealMark(o.ownSeal, o.viewer.token, "v")}</span>
-              <p class="colophon-body"></p>
-              <p class="colophon-date">${ownHandle(o)}</p>
+        <section id="mark" class="tab-panel" aria-labelledby="write-heading">
+          <h2 id="write-heading">Make your mark</h2>
+          <p class="section-note">Three steps: a seal, a place for it on the painting, and a line in
+            the margin. They're saved together, and none of it can be taken back.</p>
+          <p class="form-error" role="alert"${o.error ? "" : " hidden"}>${o.error ? escapeHtml(MESSAGES[o.error]) : ""}</p>
+          <form method="post" action="/colophons" class="desk"
+                data-interval-seconds="${o.limits.intervalSeconds}" data-ip-daily="${o.limits.ipDaily}"
+                data-has-written="${o.colophons.some((c) => c.token === o.viewer.token)}">
+            ${renderSealStep(o)}
+            ${renderSpotStep(o)}
+            <div class="step step-write">
+              <h3 class="step-title"><span class="step-num" aria-hidden="true">3</span> <label for="body">Write your colophon</label></h3>
+              <textarea
+                id="body"
+                name="body"
+                maxlength="${MAX_BODY_LENGTH}"
+                rows="4"
+                required
+                aria-describedby="desk-note"
+              >${escapeHtml(o.draft ?? "")}</textarea>
+              <p class="desk-count" hidden><span aria-hidden="true" class="desk-count-visible"></span><span class="visually-hidden" aria-live="polite"></span></p>
+              <div class="desk-preview" hidden>
+                <p class="desk-preview-label">As it will appear</p>
+                <div class="colophon colophon--mine">
+                  <span class="colophon-seal" aria-hidden="true">${chosenMark(o, "v")}</span>
+                  <p class="colophon-body"></p>
+                  <p class="colophon-date"><span class="handle choice-handle" lang="zh-Hant">${escapeHtml(chosenHandle(o))}</span></p>
+                </div>
+              </div>
+              <p class="desk-note" id="desk-note">Keep it to ${MAX_BODY_LENGTH} characters. Once it's
+                written in, it can't be changed or taken back. ${pace(o.limits.intervalSeconds)}</p>
+              <p class="desk-confirm" hidden>This is your first line here. It stays on the scroll for good —
+                press again to write it in.</p>
+              <button type="submit">Write it in</button>
             </div>
-          </div>
-          <p class="desk-note" id="desk-note">Once it's written in, it can't be changed or taken back.
-            ${pace(o.limits.intervalSeconds)}</p>
-          <p class="desk-confirm" hidden>This is your first line here. It stays on the scroll for good —
-            press again to write it in.</p>
-          <button type="submit">Write it in</button>
-        </form>
-      </section>
+          </form>
+        </section>
+
+        <section id="colophons" class="tab-panel" aria-labelledby="colophons-heading">
+          <h2 id="colophons-heading">Colophons</h2>
+          <p class="section-note">
+            Oldest first, the way a scroll unrolls. Yours is marked once it's here — nothing
+            you write can be edited or taken back, the same as ink.
+          </p>
+          <ol class="colophon-list" data-last-id="${lastId}">
+            ${colophonList(o.colophons, o.viewer)}
+          </ol>
+          ${o.colophons.length === 0 ? `<p class="empty-note">No one has written in the margin yet.</p>` : ""}
+        </section>
+      </div>
     </main>
     <footer>
       <p>Your seal on this page is <strong class="footer-seal">${ownSealMark(o.ownSeal, o.viewer.token, "f")}</strong>
@@ -386,7 +510,7 @@ export function renderIndex(o: IndexOptions): string {
     <script src="/public/colophon.js" defer></script>
   `;
 
-  return layout("Colophon", body);
+  return layout("Colophon", body, "page-index");
 }
 
 // The visitor's own handle, wherever the page shows their seal to them.
