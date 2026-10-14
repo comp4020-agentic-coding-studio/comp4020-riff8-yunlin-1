@@ -49,11 +49,16 @@ class Visitor {
   }
 }
 
-async function log(): Promise<string[]> {
-  const res = await fetch(new URL("/_provenance", baseUrl), { headers: { "x-provenance-key": KEY } });
+// The provenance lines logged after the first `after` (all of them by
+// default), and how many there have been in all.
+async function read(after = 0): Promise<{ total: number; lines: string[] }> {
+  const res = await fetch(new URL(`/_provenance?after=${after}`, baseUrl), { headers: { "x-provenance-key": KEY } });
   expect(res.status, "start the app with PROVENANCE_SPEC_KEY set, and the spec with the same value").toBe(200);
-  return (await res.text()).split("\n").filter(Boolean);
+  return { total: Number(res.headers.get("x-provenance-total")), lines: (await res.text()).split("\n").filter(Boolean) };
 }
+
+const mark = async (): Promise<number> => (await read()).total;
+const rawSince = async (n: number): Promise<string> => (await read(n)).lines.join("\n");
 
 // key=value pairs, with "quoted" values for anything holding a space.
 function fields(line: string): Record<string, string> {
@@ -63,15 +68,15 @@ function fields(line: string): Record<string, string> {
 }
 
 async function linesSince(n: number): Promise<Record<string, string>[]> {
-  const all = await log();
-  for (const line of all.slice(n)) expect(line).toMatch(/^provenance at=\S+ action=\S+ outcome=\S+ who=\S+/);
-  return all.slice(n).map(fields);
+  const { lines } = await read(n);
+  for (const line of lines) expect(line).toMatch(/^provenance at=\S+ action=\S+ outcome=\S+ who=\S+/);
+  return lines.map(fields);
 }
 
 const handleOn = (page: string): string => page.match(/class="handle own-handle"[^>]*>([^<]+)</)![1]!;
 
 it("two browsers get different handles, shown on the page and named in the log", async () => {
-  const before = (await log()).length;
+  const before = await mark();
   const a = new Visitor();
   const b = new Visitor();
   const pageA = await a.page();
@@ -100,7 +105,7 @@ it("each visitor's actions are logged under their own handle, and B can't change
   const b = new Visitor();
   await a.page();
   await b.page();
-  const start = (await log()).length;
+  const start = await mark();
 
   // A carves a seal and writes a line with it, which fixes it.
   expect((await a.seal({ char: "山", style: "zhu", strokes: trace("山") })).status).toBe(201);
@@ -143,7 +148,7 @@ it("each visitor's actions are logged under their own handle, and B can't change
   expect(by(b)).toEqual(expect.arrayContaining(["seal-clear:ok:", "write:refused:empty", "write:refused:long", "seal:refused:untraced"]));
   expect(by(b)).not.toContain("write:ok:");
 
-  const raw = (await log()).slice(start).join("\n");
+  const raw = await rawSince(start);
   expect(raw).not.toContain(a.token);
   expect(raw).not.toContain(b.token);
   expect(raw, "the log names the line by id, never by its text").not.toContain(lineA);
@@ -169,7 +174,7 @@ it("no route edits or deletes a colophon, whoever asks", async () => {
 it("a live stream opening and closing is logged under the viewer's handle", async () => {
   const v = new Visitor();
   await v.page();
-  const start = (await log()).length;
+  const start = await mark();
   const stream = await openStream("/events", { cookie: v.cookie });
   await stream.waitFor(() => stream.retry !== undefined);
   stream.close();
@@ -186,17 +191,46 @@ it("a live stream opening and closing is logged under the viewer's handle", asyn
 });
 
 it("a cookie this server never issued is replaced, and that's logged too", async () => {
-  const start = (await log()).length;
+  const start = await mark();
   const v = new Visitor();
   v.cookie = "seal=not-a-real-token";
   await v.page();
   expect(v.token).not.toBe("not-a-real-token");
   const lines = await linesSince(start);
   expect(lines.find((l) => l.who === handle(v.token))?.outcome).toBe("replaced-invalid-cookie");
-  expect((await log()).join("\n")).not.toContain("not-a-real-token");
+  expect(await rawSince(start)).not.toContain("not-a-real-token");
 });
 
 it("the log is not public: without the key the route doesn't exist", async () => {
   expect((await fetch(new URL("/_provenance", baseUrl))).status).toBe(404);
   expect((await fetch(new URL("/_provenance", baseUrl), { headers: { "x-provenance-key": "guess" } })).status).toBe(404);
+});
+
+it("placing a seal, and being refused a spot, are both provenance lines", async () => {
+  const start = await mark();
+  const v = new Visitor();
+  await v.page();
+  await v.write(marker("placed"));
+  const refused = await v.fetch("/colophons", {
+    method: "POST",
+    headers: { "Content-Type": "application/x-www-form-urlencoded" },
+    body: new URLSearchParams({ body: marker("refused-spot"), spot: "0" }).toString(),
+  });
+  expect([409, 429]).toContain(refused.status); // wet ink is checked first on a second write
+  const other = new Visitor();
+  await other.page();
+  const r2 = await other.fetch("/colophons", {
+    method: "POST",
+    headers: { "Content-Type": "application/x-www-form-urlencoded" },
+    body: new URLSearchParams({ body: marker("refused-spot"), spot: "0" }).toString(),
+  });
+  expect(r2.status).toBe(409);
+  const lines = await linesSince(start);
+  const place = lines.find((l) => l.action === "place" && l.who === handle(v.token));
+  expect(place?.outcome).toBe("ok");
+  expect(place?.how).toMatch(/^(first-free|no-free-spot)$/);
+  expect(lines.find((l) => l.action === "write" && l.outcome === "refused" && l.who === handle(other.token))).toMatchObject({
+    reason: "taken",
+    spot: "0",
+  });
 });

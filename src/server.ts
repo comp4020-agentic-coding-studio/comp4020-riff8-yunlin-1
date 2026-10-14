@@ -1,8 +1,9 @@
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 import { readFile, readFileSync } from "node:fs";
 import { extname } from "node:path";
-import { addColophon, clearSeal, currentSeal, listColophons, saveSeal, sealFixed, waitFor } from "./db.ts";
-import { checkSeal, MAX_SEAL_BODY_BYTES, renderCarved } from "./carve.ts";
+import { addColophon, clearSeal, currentSeal, freeSpotsNow, listColophons, saveSeal, sealFixed, waitFor, type SealChoice } from "./db.ts";
+import { checkSeal, isReadyChoice, MAX_SEAL_BODY_BYTES, renderCarved } from "./carve.ts";
+import { SPOTS } from "./spots.ts";
 import { handle, sealGlyph } from "./seal.ts";
 import { provenance, recentLines, SPEC_KEY } from "./provenance.ts";
 import { sealToken, seenCookie, seenUpTo } from "./cookies.ts";
@@ -68,7 +69,7 @@ function sendIndex(
   cookies: string[],
   token: string,
   status: number,
-  extra: { firstVisit?: boolean; error?: RejectReason; draft?: string } = {},
+  extra: { firstVisit?: boolean; error?: RejectReason; draft?: string; form?: URLSearchParams } = {},
 ): void {
   const colophons = listColophons();
   const lastId = colophons.at(-1)?.id ?? 0;
@@ -83,6 +84,8 @@ function sendIndex(
     limits: { intervalSeconds: WRITE_INTERVAL_MS / 1000, ipDaily: IP_DAILY_LIMIT },
     error: extra.error,
     draft: extra.draft,
+    form: extra.form,
+    freeSpots: freeSpotsNow(),
   });
   res.writeHead(status, {
     "Content-Type": "text/html; charset=utf-8",
@@ -102,7 +105,37 @@ const SEAL_MESSAGES = {
   fixed: "Your seal is already on the scroll, so it can't be changed.",
 };
 
-const REJECT_STATUS: Record<RejectReason, number> = { empty: 400, long: 400, wet: 429 };
+const REJECT_STATUS: Record<RejectReason, number> = {
+  empty: 400,
+  long: 400,
+  wet: 429,
+  taken: 409,
+  spot: 400,
+  seal: 400,
+  fixed: 409,
+  uncarved: 409,
+};
+
+// Step 2: a spot is an index into SPOTS, or absent for "the first free one".
+function parseSpot(raw: string | null): number | undefined | "bad" {
+  if (raw === null || raw === "" || raw === "any") return undefined;
+  if (!/^\d{1,3}$/.test(raw) || Number(raw) >= SPOTS.length) return "bad";
+  return Number(raw);
+}
+
+// Step 1: which seal the line carries. No field at all keeps whatever the
+// visitor has now, which is how a page from before the steps still posts.
+function parseSeal(form: URLSearchParams): SealChoice | "bad" {
+  const seal = form.get("seal");
+  if (seal === null || seal === "keep") return "keep";
+  if (seal === "generated" || seal === "carved") return seal;
+  if (seal === "ready") {
+    const char = form.get("char");
+    const style = form.get("style");
+    return isReadyChoice(char, style) ? { char: char!, style } : "bad";
+  }
+  return "bad";
+}
 
 // How a visitor appears on the page and in the log: their carved seal's
 // character if they have one, otherwise their generated glyph, with the tag.
@@ -157,8 +190,11 @@ async function route(req: IncomingMessage, res: ServerResponse): Promise<void> {
       return;
     }
     const wantsJson = (req.headers.accept ?? "").includes("application/json");
-    const draft = new URLSearchParams(raw).get("body") ?? "";
+    const form = new URLSearchParams(raw);
+    const draft = form.get("body") ?? "";
     const body = draft.trim();
+    const spot = parseSpot(form.get("spot"));
+    const seal = parseSeal(form);
     const ip = clientIp(req);
 
     let error: RejectReason | undefined;
@@ -167,23 +203,41 @@ async function route(req: IncomingMessage, res: ServerResponse): Promise<void> {
     else if (body.length > MAX_BODY_LENGTH) error = reason = "long";
     else if (waitFor(token, WRITE_INTERVAL_MS) > 0) (error = "wet"), (reason = "wet-ink");
     else if (!ipHasRoom(ip)) (error = "wet"), (reason = "address-daily-limit");
+    else if (spot === "bad") error = reason = "spot";
+    else if (seal === "bad") error = reason = "seal";
 
-    if (error) {
-      provenance("write", "refused", whoIs(token), { reason, length: body.length });
-      if (wantsJson) sendJson(res, REJECT_STATUS[error], { error, message: MESSAGES[error] });
-      else sendIndex(req, res, cookies, token, REJECT_STATUS[error], { error, draft });
+    const refuse = (error: RejectReason, fields: Record<string, string | number | undefined>): void => {
+      provenance("write", "refused", whoIs(token), { reason: error === "wet" ? reason : error, length: body.length, ...fields });
+      if (wantsJson) sendJson(res, REJECT_STATUS[error], { error, message: MESSAGES[error], freeSpots: freeSpotsNow() });
+      else sendIndex(req, res, cookies, token, REJECT_STATUS[error], { error, draft, form });
+    };
+
+    if (error || spot === "bad" || seal === "bad") {
+      refuse(error!, {});
       return;
     }
 
     // Broadcast only once the insert has committed, with the row it returned.
-    const row = addColophon(token, body);
+    const before = whoIs(token);
+    const result = addColophon(token, body, { spot, seal });
+    if (!result.ok) {
+      refuse(result.reason, { spot });
+      return;
+    }
+    const row = result.row;
     countWrite(ip);
     broadcast(row);
+    const kind = row.seal_id === null ? "generated" : row.seal_strokes === "[]" ? "ready" : "carved";
     provenance("write", "ok", whoIs(token), {
       colophon: row.id,
       length: body.length,
-      seal: row.seal_id === null ? "generated" : "carved",
-      spot: row.spot_x === null ? "none" : `${row.spot_x},${row.spot_y}`,
+      seal: kind,
+      was: before === whoIs(token) ? undefined : before,
+    });
+    provenance("place", "ok", whoIs(token), {
+      colophon: row.id,
+      spot: result.spot === -1 ? "none" : result.spot,
+      how: result.spot === -1 ? "no-free-spot" : result.chosen ? "chosen" : "first-free",
     });
 
     if (wantsJson) sendJson(res, 201, colophonEvent(row, { token }));
@@ -249,8 +303,10 @@ async function route(req: IncomingMessage, res: ServerResponse): Promise<void> {
   }
 
   if (req.method === "GET" && url.pathname === "/_provenance" && SPEC_KEY && req.headers["x-provenance-key"] === SPEC_KEY) {
-    res.writeHead(200, { "Content-Type": "text/plain; charset=utf-8" });
-    res.end(recentLines().join("\n"));
+    const after = Number(url.searchParams.get("after") ?? 0);
+    const { total, lines } = recentLines(Number.isSafeInteger(after) && after > 0 ? after : 0);
+    res.writeHead(200, { "Content-Type": "text/plain; charset=utf-8", "X-Provenance-Total": String(total) });
+    res.end(lines.join("\n"));
     return;
   }
 

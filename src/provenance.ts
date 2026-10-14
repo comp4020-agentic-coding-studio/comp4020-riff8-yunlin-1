@@ -30,7 +30,7 @@ export function provenance(action: string, outcome: string, who: string, fields:
   console.log(line);
   if (SPEC_KEY) {
     recent.push(line);
-    if (recent.length > KEEP) recent.splice(0, recent.length - KEEP);
+    if (recent.length > KEEP) dropped += recent.splice(0, recent.length - KEEP).length;
   }
 }
 
@@ -42,7 +42,10 @@ export function provenance(action: string, outcome: string, who: string, fields:
 export const SPEC_KEY = process.env.PROVENANCE_SPEC_KEY || undefined;
 const KEEP = 2000;
 const recent: string[] = [];
+let dropped = 0;
 
-export function recentLines(): string[] {
-  return recent;
+// Lines numbered from the first ever logged, so a reader can ask for what's
+// new since the count it saw last, however many the buffer has let go.
+export function recentLines(after = 0): { total: number; lines: string[] } {
+  return { total: dropped + recent.length, lines: recent.slice(Math.max(0, after - dropped)) };
 }

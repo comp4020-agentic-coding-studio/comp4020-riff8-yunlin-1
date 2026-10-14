@@ -30,10 +30,18 @@ const A = [[5895, 60], [5975, 130], [6060, 60], [5900, 200], [6000, 230], [6080,
 const D = [[6830, 80], [6930, 170], [6830, 280], [6930, 380], [6830, 490]];
 const C = [[5130, 90], [5210, 200], [5130, 310], [5210, 420], [5130, 530]];
 
-function interleave(...lists: number[][][]): number[][] {
-  const out: number[][] = [];
+// Where each list is, for a spot's accessible name.
+const PLACES = new Map<number[][], string>([
+  [B, "blank silk beside the figure"],
+  [A, "blank silk under the pine"],
+  [D, "mounting silk right of the painting"],
+  [C, "mounting silk left of the painting"],
+]);
+
+function interleave(...lists: number[][][]): [number[], string][] {
+  const out: [number[], string][] = [];
   for (let i = 0; out.length < lists.reduce((n, l) => n + l.length, 0); i++) {
-    for (const list of lists) if (list[i]) out.push(list[i]!);
+    for (const list of lists) if (list[i]) out.push([list[i]!, PLACES.get(list)!]);
   }
   return out;
 }
@@ -45,13 +53,28 @@ export interface Spot {
 
 const round = (n: number): number => Math.round(n * 10000) / 10000;
 
-export const SPOTS: Spot[] = interleave(B, A, D, C).map(([x, y]) => ({
+const PLACED = interleave(B, A, D, C);
+
+export const SPOTS: Spot[] = PLACED.map(([[x, y]]) => ({
   x: round(x! / IMAGE_WIDTH),
   y: round(y! / IMAGE_HEIGHT),
 }));
 
+export const SPOT_PLACES: string[] = PLACED.map(([, place]) => place);
+
+const same = (a: Spot, b: Spot): boolean => a.x === b.x && a.y === b.y;
+
+// A spot's index in SPOTS, or -1 for one that isn't listed.
+export function spotIndex(s: Spot): number {
+  return SPOTS.findIndex((t) => same(s, t));
+}
+
+export function freeSpots(taken: Spot[]): number[] {
+  return SPOTS.flatMap((s, i) => (taken.some((t) => same(s, t)) ? [] : [i]));
+}
+
 // The first spot nobody holds yet, or none: once the list is used up a seal
 // lives in the list of colophons only and the painting is never covered.
 export function firstFreeSpot(taken: Spot[], spots: Spot[] = SPOTS): Spot | undefined {
-  return spots.find((s) => !taken.some((t) => t.x === s.x && t.y === s.y));
+  return spots.find((s) => !taken.some((t) => same(s, t)));
 }

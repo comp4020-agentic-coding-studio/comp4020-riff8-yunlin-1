@@ -177,3 +177,38 @@ export function renderCarved(seal: CarvedSeal, key: string): string {
       : `<mask id="${cut}"><rect x="-70" y="-70" width="1140" height="1140" fill="#fff"/><path d="${d}" stroke="#000" ${strokeAttrs}/></mask><rect x="-62" y="-62" width="1124" height="1124" rx="36" fill="currentColor" mask="url(#${cut})"/>`;
   return `<svg class="carved" viewBox="-90 -90 1180 1180" aria-hidden="true" focusable="false"><defs>${filter}</defs><g filter="url(#${wear})">${body}</g></svg>`;
 }
+
+// A ready-made seal is a guide character as the font draws it, rather than a
+// visitor's tracing. It is stored like a carved seal with no strokes, which
+// no carved seal can have (checkSeal wants at least one).
+export const READY_STROKES = "[]";
+
+export function isReadyChoice(char: unknown, style: unknown): style is SealStyle {
+  return (
+    typeof char === "string" &&
+    Object.hasOwn(GUIDES, char) &&
+    typeof style === "string" &&
+    (STYLES as readonly string[]).includes(style)
+  );
+}
+
+// Built from the guide's own outline, never from visitor text; the same worn
+// edge and colour rule as a carved seal.
+export function renderReady(char: string, style: SealStyle, key: string): string {
+  const d = GUIDES[char]!.path;
+  const wear = `wear-${key}`;
+  const cut = `cut-${key}`;
+  const filter = `<filter id="${wear}" x="-10%" y="-10%" width="120%" height="120%"><feTurbulence type="fractalNoise" baseFrequency="0.035" numOctaves="2" seed="${char.codePointAt(0)! % 9973}"/><feDisplacementMap in="SourceGraphic" scale="22"/></filter>`;
+  const body =
+    style === "zhu"
+      ? `<rect x="-40" y="-40" width="1080" height="1080" rx="40" fill="none" stroke="currentColor" stroke-width="44"/><path d="${d}" fill="currentColor"/>`
+      : `<mask id="${cut}"><rect x="-70" y="-70" width="1140" height="1140" fill="#fff"/><path d="${d}" fill="#000"/></mask><rect x="-62" y="-62" width="1124" height="1124" rx="36" fill="currentColor" mask="url(#${cut})"/>`;
+  return `<svg class="carved ready" viewBox="-90 -90 1180 1180" aria-hidden="true" focusable="false"><defs>${filter}</defs><g filter="url(#${wear})">${body}</g></svg>`;
+}
+
+// Any stored seal, carved or ready-made, as SVG.
+export function renderStored(char: string, style: string, strokes: string, key: string): string {
+  return strokes === READY_STROKES
+    ? renderReady(char, style as SealStyle, key)
+    : renderCarved({ char, style: style as SealStyle, strokes: JSON.parse(strokes) }, key);
+}

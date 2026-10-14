@@ -1,7 +1,8 @@
 import { DatabaseSync } from "node:sqlite";
 import { existsSync, mkdirSync } from "node:fs";
 import { dirname } from "node:path";
-import { firstFreeSpot, type Spot } from "./spots.ts";
+import { firstFreeSpot, freeSpots, spotIndex, SPOTS, type Spot } from "./spots.ts";
+import { READY_STROKES } from "./carve.ts";
 
 // /data is the one thing that survives a restart or redeploy (fly.toml mounts
 // a volume there). Locally and in CI (which mounts a throwaway /data of its
@@ -112,24 +113,66 @@ export function waitFor(token: string, intervalMs: number, now = Date.now()): nu
   return at === null ? 0 : Math.max(0, at + intervalMs - now);
 }
 
-// The spot is chosen inside the same write that saves the line: node:sqlite
-// is one synchronous writer in one process, so two lines arriving at the same
-// moment can never be handed the same spot.
-export function addColophon(token: string, body: string): Colophon {
+// What a write asks for beyond its text: a spot (an index into SPOTS) and
+// which seal to write with. "keep" (and no choice at all) uses whatever seal
+// the visitor has now: a kept carved seal, otherwise the generated one.
+export type SealChoice = "keep" | "generated" | "carved" | { char: string; style: string };
+
+export type WriteResult =
+  | { ok: true; row: Colophon; spot: number; chosen: boolean }
+  | { ok: false; reason: "taken" | "fixed" | "uncarved" };
+
+// The spot and the seal are settled inside the same write that saves the
+// line: node:sqlite is one synchronous writer in one process, so of two lines
+// asking for one spot at the same moment the first wins and the second is
+// refused, and a seal can't change between being checked and being used.
+export function addColophon(
+  token: string,
+  body: string,
+  opts: { spot?: number; seal?: SealChoice } = {},
+): WriteResult {
   db.exec("BEGIN IMMEDIATE");
   try {
-    const spot = firstFreeSpot(selectTaken.all() as unknown as Spot[]);
+    const refuse = (reason: "taken" | "fixed" | "uncarved"): WriteResult => {
+      db.exec("ROLLBACK");
+      return { ok: false, reason };
+    };
+    const taken = selectTaken.all() as unknown as Spot[];
+    let spot: Spot | undefined;
+    if (opts.spot !== undefined) {
+      if (!freeSpots(taken).includes(opts.spot)) return refuse("taken");
+      spot = SPOTS[opts.spot];
+    } else spot = firstFreeSpot(taken);
+
+    const cur = currentSeal(token);
+    const fixed = cur !== undefined && sealFixed(cur);
+    const choice = opts.seal ?? "keep";
+    if (choice === "generated") {
+      if (fixed) return refuse("fixed");
+      if (cur) deleteSeal.run(cur.id);
+    } else if (choice === "carved") {
+      if (!cur || cur.strokes === READY_STROKES) return refuse("uncarved");
+    } else if (typeof choice === "object") {
+      if (fixed) return refuse("fixed");
+      if (cur) updateSeal.run(choice.char, choice.style, READY_STROKES, Date.now(), cur.id);
+      else insertSeal.run(token, choice.char, choice.style, READY_STROKES, Date.now());
+    }
+
     const seal = currentSeal(token);
     const { id } = insert.get(token, body, Date.now(), spot?.x ?? null, spot?.y ?? null, seal?.id ?? null) as {
       id: number;
     };
     const row = selectOne.get(id) as unknown as Colophon;
     db.exec("COMMIT");
-    return row;
+    return { ok: true, row, spot: spot ? spotIndex(spot) : -1, chosen: opts.spot !== undefined };
   } catch (err) {
     db.exec("ROLLBACK");
     throw err;
   }
+}
+
+export function freeSpotsNow(): number[] {
+  return freeSpots(selectTaken.all() as unknown as Spot[]);
 }
 
 export function currentSeal(token: string): SealRow | undefined {
