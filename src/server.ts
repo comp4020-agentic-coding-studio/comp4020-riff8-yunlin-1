@@ -3,7 +3,8 @@ import { readFile, readFileSync } from "node:fs";
 import { extname } from "node:path";
 import { addColophon, clearSeal, currentSeal, listColophons, saveSeal, sealFixed, waitFor } from "./db.ts";
 import { checkSeal, MAX_SEAL_BODY_BYTES, renderCarved } from "./carve.ts";
-import { sealGlyph } from "./seal.ts";
+import { handle, sealGlyph } from "./seal.ts";
+import { provenance, recentLines, SPEC_KEY } from "./provenance.ts";
 import { sealToken, seenCookie, seenUpTo } from "./cookies.ts";
 import { clientIp, countWrite, ipHasRoom, IP_DAILY_LIMIT, WRITE_INTERVAL_MS } from "./limits.ts";
 import { broadcast, lookingWith, openStream } from "./live.ts";
@@ -103,26 +104,54 @@ const SEAL_MESSAGES = {
 
 const REJECT_STATUS: Record<RejectReason, number> = { empty: 400, long: 400, wet: 429 };
 
+// How a visitor appears on the page and in the log: their carved seal's
+// character if they have one, otherwise their generated glyph, with the tag.
+const whoIs = (token: string): string => handle(token, currentSeal(token)?.char);
+
+// A visitor arriving with no seal is given one, only on the routes that set
+// the cookie (a stylesheet fetch doesn't), and that's logged once, there.
+function issue(token: string, setCookie: string | undefined, replaced: boolean | undefined, route: string): void {
+  if (!setCookie) return;
+  provenance("seal-issued", replaced ? "replaced-invalid-cookie" : "new", whoIs(token), { route });
+}
+
 const server = createServer(async (req, res) => {
+  try {
+    await route(req, res);
+  } catch (err) {
+    // One boundary for the whole handler: a client hanging up mid-body makes
+    // the body read reject, and an unhandled rejection exits the process for
+    // everyone else on the scroll.
+    provenance("request", "error", "-", { route: new URL(req.url ?? "/", "http://internal").pathname, error: (err as Error).message });
+    if (!res.headersSent) res.writeHead(500, { "Content-Type": "text/plain; charset=utf-8" });
+    res.end();
+  }
+});
+
+async function route(req: IncomingMessage, res: ServerResponse): Promise<void> {
   const url = new URL(req.url ?? "/", "http://internal");
-  const { token, setCookie } = sealToken(req.headers.cookie);
+  const { token, setCookie, replaced } = sealToken(req.headers.cookie);
   const cookies = setCookie ? [setCookie] : [];
 
   if (req.method === "GET" && url.pathname === "/") {
+    issue(token, setCookie, replaced, "/");
     sendIndex(req, res, cookies, token, 200, { firstVisit: setCookie !== undefined });
     return;
   }
 
   if (req.method === "GET" && url.pathname === "/events") {
     if (setCookie) res.setHeader("Set-Cookie", setCookie);
-    openStream(req, res, url, token, listColophons().at(-1)?.id ?? 0);
+    issue(token, setCookie, replaced, "/events");
+    openStream(req, res, url, token, listColophons().at(-1)?.id ?? 0, whoIs(token));
     return;
   }
 
   if (req.method === "POST" && url.pathname === "/colophons") {
     if (setCookie) res.setHeader("Set-Cookie", setCookie);
+    issue(token, setCookie, replaced, "/colophons");
     const raw = await readBody(req);
     if (raw === undefined) {
+      provenance("write", "refused", whoIs(token), { reason: "too-large" });
       res.writeHead(413, { "Content-Type": "text/plain; charset=utf-8" });
       res.end("payload too large");
       return;
@@ -133,11 +162,14 @@ const server = createServer(async (req, res) => {
     const ip = clientIp(req);
 
     let error: RejectReason | undefined;
-    if (body.length === 0) error = "empty";
-    else if (body.length > MAX_BODY_LENGTH) error = "long";
-    else if (waitFor(token, WRITE_INTERVAL_MS) > 0 || !ipHasRoom(ip)) error = "wet";
+    let reason: string | undefined;
+    if (body.length === 0) error = reason = "empty";
+    else if (body.length > MAX_BODY_LENGTH) error = reason = "long";
+    else if (waitFor(token, WRITE_INTERVAL_MS) > 0) (error = "wet"), (reason = "wet-ink");
+    else if (!ipHasRoom(ip)) (error = "wet"), (reason = "address-daily-limit");
 
     if (error) {
+      provenance("write", "refused", whoIs(token), { reason, length: body.length });
       if (wantsJson) sendJson(res, REJECT_STATUS[error], { error, message: MESSAGES[error] });
       else sendIndex(req, res, cookies, token, REJECT_STATUS[error], { error, draft });
       return;
@@ -147,6 +179,12 @@ const server = createServer(async (req, res) => {
     const row = addColophon(token, body);
     countWrite(ip);
     broadcast(row);
+    provenance("write", "ok", whoIs(token), {
+      colophon: row.id,
+      length: body.length,
+      seal: row.seal_id === null ? "generated" : "carved",
+      spot: row.spot_x === null ? "none" : `${row.spot_x},${row.spot_y}`,
+    });
 
     if (wantsJson) sendJson(res, 201, colophonEvent(row, { token }));
     else {
@@ -161,8 +199,10 @@ const server = createServer(async (req, res) => {
   // the 16 KB one.
   if (req.method === "POST" && url.pathname === "/seal") {
     if (setCookie) res.setHeader("Set-Cookie", setCookie);
+    issue(token, setCookie, replaced, "/seal");
     const raw = await readBody(req, MAX_SEAL_BODY_BYTES);
     if (raw === undefined) {
+      provenance("seal", "refused", whoIs(token), { reason: "too-large" });
       res.writeHead(413, { "Content-Type": "text/plain; charset=utf-8" });
       res.end("payload too large");
       return;
@@ -171,29 +211,46 @@ const server = createServer(async (req, res) => {
     try {
       input = JSON.parse(raw);
     } catch {
+      provenance("seal", "refused", whoIs(token), { reason: "invalid" });
       sendJson(res, 400, { error: "invalid", message: SEAL_MESSAGES.invalid });
       return;
     }
 
     if (JSON.stringify(input) === '{"clear":true}') {
+      const before = whoIs(token);
       const done = clearSeal(token);
-      if (done === "fixed") sendJson(res, 409, { error: "fixed", message: SEAL_MESSAGES.fixed });
-      else sendJson(res, 200, { mark: sealGlyph(token) });
+      if (done === "fixed") {
+        provenance("seal-clear", "refused", before, { reason: "fixed" });
+        sendJson(res, 409, { error: "fixed", message: SEAL_MESSAGES.fixed });
+      } else {
+        provenance("seal-clear", "ok", before, { now: whoIs(token) });
+        sendJson(res, 200, { mark: sealGlyph(token), handle: whoIs(token) });
+      }
       return;
     }
 
     const verdict = checkSeal(input);
     if (!verdict.ok) {
+      provenance("seal", "refused", whoIs(token), { reason: verdict.reason });
       sendJson(res, 400, { error: verdict.reason, message: SEAL_MESSAGES[verdict.reason] });
       return;
     }
     const { char, style, strokes } = verdict.seal;
+    const before = whoIs(token);
     const saved = saveSeal(token, char, style, JSON.stringify(strokes));
     if (saved === "fixed") {
+      provenance("seal", "refused", before, { reason: "fixed" });
       sendJson(res, 409, { error: "fixed", message: SEAL_MESSAGES.fixed });
       return;
     }
-    sendJson(res, 201, { mark: renderCarved(verdict.seal, "v") });
+    provenance("seal", "carved", before, { now: whoIs(token), style });
+    sendJson(res, 201, { mark: renderCarved(verdict.seal, "v"), handle: whoIs(token) });
+    return;
+  }
+
+  if (req.method === "GET" && url.pathname === "/_provenance" && SPEC_KEY && req.headers["x-provenance-key"] === SPEC_KEY) {
+    res.writeHead(200, { "Content-Type": "text/plain; charset=utf-8" });
+    res.end(recentLines().join("\n"));
     return;
   }
 
@@ -225,7 +282,7 @@ const server = createServer(async (req, res) => {
 
   res.writeHead(404, { "Content-Type": "text/plain; charset=utf-8" });
   res.end("not found");
-});
+}
 
 server.listen(PORT, "0.0.0.0", () => {
   console.log(`colophon listening on 0.0.0.0:${PORT}`);

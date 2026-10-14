@@ -1,6 +1,7 @@
 import type { IncomingMessage, ServerResponse } from "node:http";
 import { colophonsAfter, type Colophon } from "./db.ts";
 import { colophonEvent } from "./render.ts";
+import { provenance } from "./provenance.ts";
 
 // Server-sent events, fanned out from memory. That is correct only because
 // there is exactly one process on one machine (fly.toml): every write and
@@ -65,8 +66,16 @@ function startingId(req: IncomingMessage, url: URL, latest: number): number {
   return latest;
 }
 
-export function openStream(req: IncomingMessage, res: ServerResponse, url: URL, token: string, latest: number): void {
+export function openStream(
+  req: IncomingMessage,
+  res: ServerResponse,
+  url: URL,
+  token: string,
+  latest: number,
+  who: string,
+): void {
   if (streams.size >= MAX_STREAMS) {
+    provenance("stream", "refused", who, { reason: "full", streams: streams.size });
     res.writeHead(503, { "Content-Type": "text/plain; charset=utf-8", "Retry-After": "30" });
     res.end("too many open scrolls; try again shortly");
     return;
@@ -89,10 +98,12 @@ export function openStream(req: IncomingMessage, res: ServerResponse, url: URL, 
   for (const c of colophonsAfter(stream.lastId)) send(stream, c);
   res.write(`event: presence\ndata: ${looking()}\n\n`);
   presenceChanged();
+  provenance("stream", "opened", who, { streams: streams.size });
 
   req.on("close", () => {
     streams.delete(stream);
     presenceChanged();
+    provenance("stream", "closed", who, { streams: streams.size });
   });
 }
 

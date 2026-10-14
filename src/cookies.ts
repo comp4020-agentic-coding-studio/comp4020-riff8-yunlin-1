@@ -37,12 +37,17 @@ export function parseCookie(header: string | undefined, name: string): string | 
 // Every visitor is identified by one anonymous, unguessable token, set the
 // first time they arrive with no account and no name attached — the same
 // answer to "who counts as a person" a seal gives: presence without identity.
-export function sealToken(cookieHeader: string | undefined): { token: string; setCookie?: string } {
+// `replaced` says a seal cookie came in but wasn't one this server issued.
+export function sealToken(cookieHeader: string | undefined): { token: string; setCookie?: string; replaced?: boolean } {
   const existing = parseCookie(cookieHeader, SEAL_COOKIE);
   if (existing && UUID_RE.test(existing)) return { token: existing };
 
   const token = randomUUID();
-  return { token, setCookie: `${SEAL_COOKIE}=${token}; Max-Age=${TEN_YEARS_SECONDS}; Path=/; HttpOnly; SameSite=Lax` };
+  return {
+    token,
+    setCookie: `${SEAL_COOKIE}=${token}; Max-Age=${TEN_YEARS_SECONDS}; Path=/; HttpOnly; SameSite=Lax`,
+    replaced: existing !== undefined || /(^|;)\s*seal=/.test(cookieHeader ?? ""),
+  };
 }
 
 const SEEN_COOKIE = "seen";
