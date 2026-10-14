@@ -1,5 +1,5 @@
 import { escapeHtml } from "./html.ts";
-import { sealGlyph } from "./seal.ts";
+import { handle, sealGlyph } from "./seal.ts";
 import type { Colophon, SealRow } from "./db.ts";
 import { GUIDES, renderCarved, type SealStyle } from "./carve.ts";
 import { IMAGE_HEIGHT } from "./spots.ts";
@@ -62,6 +62,13 @@ function sealMark(c: Colophon, key: string): string {
 
 const sealName = (c: Colophon): string => c.seal_char ?? sealGlyph(c.token);
 
+// The handle under a line: the seal it was written with and its writer's tag,
+// the same words the provenance log names them by. Quiet, like the small
+// inscription beside a seal, and never in the accent colour.
+const handleTag = (h: string): string => `<span class="handle" lang="zh-Hant">${escapeHtml(h)}</span>`;
+
+export const colophonHandle = (c: Colophon): string => handle(c.token, sealName(c));
+
 export function ownSealMark(seal: SealRow | undefined, token: string, key: string): string {
   return seal
     ? renderCarved({ char: seal.char, style: seal.style as SealStyle, strokes: JSON.parse(seal.strokes) }, key)
@@ -83,7 +90,7 @@ export function renderColophon(c: Colophon, viewer: Viewer): string {
   return `<li class="${classes}" id="c-${c.id}" data-id="${c.id}">
         <span class="colophon-seal" aria-hidden="true">${sealMark(c, `l${c.id}`)}</span>
         <p class="colophon-body">${escapeHtml(c.body)}</p>
-        <p class="colophon-date">${dateFmt.format(new Date(c.created_at))}${mine ? " — yours" : ""}</p>
+        <p class="colophon-date">${handleTag(colophonHandle(c))} ${dateFmt.format(new Date(c.created_at))}${mine ? " — yours" : ""}</p>
       </li>`;
 }
 
@@ -189,7 +196,7 @@ export function renderPaintingSeal(c: Colophon, viewer: Viewer): string {
   const date = dateFmt.format(new Date(c.created_at));
   return `<a class="painting-seal${mine ? " painting-seal--mine" : ""}" href="#c-${c.id}" data-id="${c.id}"
                    style="left: ${(c.spot_x * 100).toFixed(2)}%; top: ${(c.spot_y * 100).toFixed(2)}%"
-                   aria-label="${mine ? "Your seal" : "A seal"}, ${sealName(c)}: a colophon written ${date}"><span aria-hidden="true">${sealMark(c, `p${c.id}`)}</span></a>`;
+                   aria-label="${mine ? "Your seal" : "A seal"}, ${escapeHtml(colophonHandle(c))}: a colophon written ${date}"><span aria-hidden="true">${sealMark(c, `p${c.id}`)}</span></a>`;
 }
 
 function pace(seconds: number): string {
@@ -361,6 +368,7 @@ export function renderIndex(o: IndexOptions): string {
             <div class="colophon colophon--mine">
               <span class="colophon-seal" aria-hidden="true">${ownSealMark(o.ownSeal, o.viewer.token, "v")}</span>
               <p class="colophon-body"></p>
+              <p class="colophon-date">${ownHandle(o)}</p>
             </div>
           </div>
           <p class="desk-note" id="desk-note">Once it's written in, it can't be changed or taken back.
@@ -372,13 +380,18 @@ export function renderIndex(o: IndexOptions): string {
       </section>
     </main>
     <footer>
-      <p>Your seal on this page is <strong class="footer-seal">${ownSealMark(o.ownSeal, o.viewer.token, "f")}</strong> — remembered by
-        your browser, not by a name. <a href="/readme/">Read more.</a></p>
+      <p>Your seal on this page is <strong class="footer-seal">${ownSealMark(o.ownSeal, o.viewer.token, "f")}</strong>
+        ${ownHandle(o)} — remembered by your browser, not by a name. <a href="/readme/">Read more.</a></p>
     </footer>
     <script src="/public/colophon.js" defer></script>
   `;
 
   return layout("Colophon", body);
+}
+
+// The visitor's own handle, wherever the page shows their seal to them.
+function ownHandle(o: IndexOptions): string {
+  return `<span class="handle own-handle" lang="zh-Hant">${escapeHtml(handle(o.viewer.token, o.ownSeal?.char))}</span>`;
 }
 
 export function renderReadme(html: string): string {

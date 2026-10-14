@@ -513,6 +513,21 @@ figcaption {
   color: var(--seal);
 }
 
+/* A visitor's handle: seal character and tag, set small like the inscription
+   beside a seal. Always ink, even inside a line of your own: the accent marks
+   whose line it is, the handle only tells people apart. */
+.handle {
+  color: var(--ink-soft);
+  font-variant: normal;
+  font-size: 0.78rem;
+  letter-spacing: 0.04em;
+  white-space: nowrap;
+}
+
+.colophon-date .handle {
+  margin-right: 0.5em;
+}
+
 .since-rule {
   display: flex;
   align-items: center;

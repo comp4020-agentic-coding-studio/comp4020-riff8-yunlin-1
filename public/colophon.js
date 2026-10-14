@@ -447,8 +447,9 @@
       });
     }
 
-    function showOwnSeal(mark) {
+    function showOwnSeal(mark, handle) {
       for (const el of document.querySelectorAll(".desk-preview .colophon-seal, .footer-seal")) el.innerHTML = mark;
+      if (handle) for (const el of document.querySelectorAll(".own-handle")) el.textContent = handle;
     }
 
     async function post(payload) {
@@ -477,7 +478,7 @@
           say(res.body.message ?? "That seal didn't save. Try again.");
           return;
         }
-        showOwnSeal(res.body.mark);
+        showOwnSeal(res.body.mark, res.body.handle);
         carve.dataset.state = "draft";
         say("Your seal is ready. It goes beside your next line, and can't be changed after that.");
       } else if (action === "generated") {
@@ -486,7 +487,7 @@
           say(res.body.message ?? "That didn't work. Try again.");
           return;
         }
-        showOwnSeal(res.body.mark);
+        showOwnSeal(res.body.mark, res.body.handle);
         carve.dataset.state = "none";
         clearInk();
         say("You'll write with the seal chosen for your browser.");
