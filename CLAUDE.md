@@ -65,6 +65,9 @@ what has to change first, in the same commit.
   else: never free drawing, an uploaded image or text. The server checks it
   follows its guide, stores it as numbers and builds its SVG from those
   numbers alone; once a line carries it, it's fixed.
+- The server decides where a seal goes: a spot from `SPOTS`, still free,
+  checked inside the same write that saves the line (`addColophon`). Never
+  trust a position the browser sends.
 - A colophon becomes HTML in one place, `renderColophon`, for the page and the
   live event alike. No event ever carries a seal token, and no IP address is
   ever written to the database.

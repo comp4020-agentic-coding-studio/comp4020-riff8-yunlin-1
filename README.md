@@ -98,7 +98,12 @@ that a carved seal has to follow its guide. And it checks crit 10's
 question, with two visitors in separate cookie jars: they get different
 handles, the page and the provenance log name them the same way, neither can
 change the other's seal, nobody can edit or delete a line, and no log line
-carries a token, an address or a line's text. Whether the tone of what accumulates actually reads
+carries a token, an address or a line's text. Making a mark is three steps
+(a seal, a spot on the painting, a line), and the spec checks the server
+decides the spot: only a listed, free one, of two people choosing the same
+spot the first wins and the second keeps their draft, and the tabs work
+from the keyboard and the URL hash and fall back to plain sections without
+a script. Whether the tone of what accumulates actually reads
 like a colophon — considered, brief, worth adding to a shared object — rather
 than chat is not something a test can check; that's for whoever reads the
 margin to judge.

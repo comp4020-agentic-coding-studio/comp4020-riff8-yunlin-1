@@ -599,3 +599,24 @@ no catch, and Node 24 exits on an unhandled rejection: one half-sent request
 took the scroll down for everyone. The handler now sits inside one error
 boundary, which logs `action=request outcome=error`, and
 `spec/request-limits.test.ts` sends that half request over a raw socket.
+
+### Making a mark, in three steps
+
+The pod also asked for the page to be reorganised: the painting on the left,
+staying in view, and three tabs on the right. Make your mark is now three
+steps, saved together in one write. First a seal: the generated one, a
+ready-made character in 朱文 or 白文, or one carved with the tracing tool.
+Then a spot on the painting, then the line. Two choices weren't settled by
+the brief:
+
+- **A ready-made seal is the guide's own outline**, the same small-seal
+  font the carving traces, stored as a seal with no strokes. It fixes on
+  first use like a carved one. More visitors sharing a character is the
+  collision the handle's tag exists for.
+- **The spot is an index into `SPOTS`, never a position.** `addColophon`
+  checks it is free inside the same `BEGIN IMMEDIATE` that saves the line.
+  A second visitor asking for the same spot gets 409 `taken`, logged with
+  the spot, and their draft back. Without a script the spot is a `<select>`
+  of the free ones. With one, the free spots also show on the painting as
+  dotted squares to click, and a spot taken by someone else drops off every
+  open page live.
