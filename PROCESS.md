@@ -507,3 +507,95 @@ keyboard user can't make the thing a mouse user can. For carving to lose,
 `README.md` would have to say that a visitor's lines should stay unlinkable
 to each other, which it has never quite said.
 
+
+## Crit 10: who did what, and who may change what
+
+The crit has two people use the scroll side by side, each in their own
+browser, while someone else says who did what from `flyctl logs` alone.
+Before this, the only line the app ever logged was its startup line, and
+the one visible identity, a glyph from a pool of twelve, collided for one
+pair in twelve.
+
+### Telling people apart: the handle
+
+A person here is still a browser: an anonymous seal token in an HttpOnly
+cookie, issued on first visit (`sealToken` in `src/cookies.ts`). What's new is a
+public **handle**, the visitor's seal character plus four hex digits of a
+SHA-256 of their token, such as `鑑·4f2a` (`handle` in `src/seal.ts`). The
+hash is one-way, so the tag says nothing about the token, and 65,536 tags
+mean a room of visitors almost never shares one. The character follows the
+seal (carving 山 turns `鑑·4f2a` into `山·4f2a`), but the tag never changes, and
+the tag is what follows one person down the log. The page shows the handle
+under each line and beside the visitor's own seal, set small in ink, like
+the inscription beside a seal. The 過眼 count stays a bare number, so the
+handle names who *wrote*, never who is *looking*.
+
+**The case against.** The tag links all of one browser's lines together,
+including lines written with a generated seal, which used to be one twelfth
+of everyone. Carving already made that linkage strong; the tag makes it
+universal. I took that trade because the brief requires the app to tell
+people apart, and a person who can't be told apart can't be held to "only
+your own seal". The tag still isn't a name: nothing connects it to anyone
+outside this scroll.
+
+### The provenance log
+
+Every action logs one line to stdout (`src/provenance.ts`), named for what
+a scroll's seals and colophons are, its provenance:
+
+```
+provenance at=… action=write outcome=ok who=山·6aa6 colophon=1 length=39 seal=carved spot=0.8573,0.1
+provenance at=… action=seal-clear outcome=refused who=山·6aa6 reason=fixed
+provenance at=… action=write outcome=refused who=記·8794 reason=wet-ink length=35
+```
+
+The actions are `seal-issued` (a first visit, or a cookie this server never
+issued being replaced), `write`, `seal` (carved), `seal-clear`, `stream`
+(opened, closed, refused when full), and `request outcome=error`. Every
+refusal has a `reason`: `empty`, `long`, `wet-ink`, `address-daily-limit`,
+`too-large`, `invalid`, `untraced`, `fixed`. A line never carries
+the raw token (it's the visitor's credential), an IP address, or the text
+of a colophon. The id finds the text, which is public on the page anyway.
+Page views aren't logged, only actions and open streams, so the log can't
+become the record of who was looking that 過眼 refuses to keep.
+
+### Who may see and change what
+
+Ink doesn't come off the paper (`README.md`, "What I chose not to build").
+Everything below follows from that, plus the fact that a seal is yours
+until you press it.
+
+- **Anyone may see** every colophon, its date, its seal and the writer's
+  handle, and the 過眼 count. Nobody can see a token, a viewer's identity,
+  or the provenance log, which has no public route.
+- **A visitor may change their own seal** (carve it, redo it, go back to the
+  generated one) until a line carries it. Checked in `saveSeal` and
+  `clearSeal` (`src/db.ts`), which refuse with `fixed` (409) once a line
+  uses the seal. Both look the seal up by the requesting cookie's token, so
+  there is no request that names someone else's seal at all.
+- **A visitor may add lines** under their own seal, one every two minutes.
+  The author is always the requesting cookie's token, never a field in the
+  form (`POST /colophons` in `src/server.ts`).
+- **Nobody may change** any colophon, their own included, or anyone else's
+  seal. No route edits or deletes a colophon: the server answers only `GET`
+  and `POST` on its routes, and everything else 404s.
+- **A token the server didn't issue is not an identity.** `sealToken`
+  accepts only the UUID shape it hands out, and anything else gets a fresh
+  token, logged as `seal-issued outcome=replaced-invalid-cookie`.
+
+`spec/provenance.test.ts` checks this with two visitors who have separate
+cookie jars, as two Chrome profiles would. They get different handles, and
+the page and the log agree on them. B carving and clearing changes only B's seal,
+while A's stays carved and fixed. No method edits or deletes a line. Each
+action, refusals included, is logged under the right person's tag, and no line
+holds either token, the line's text or the client address. The spec can't read
+a container's stdout, so the app keeps its last 2,000 provenance lines in
+memory, but only when `PROVENANCE_SPEC_KEY` is set. CI sets it, production
+never does, and without it `/_provenance` is a plain 404.
+
+Writing the log turned up a real fault. A client that declared a body and
+hung up halfway made the body read reject inside an `async` handler with
+no catch, and Node 24 exits on an unhandled rejection: one half-sent request
+took the scroll down for everyone. The handler now sits inside one error
+boundary, which logs `action=request outcome=error`, and
+`spec/request-limits.test.ts` sends that half request over a raw socket.

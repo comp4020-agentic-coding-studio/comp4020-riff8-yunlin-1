@@ -55,6 +55,13 @@ is the thing a scroll's viewing seals have always recorded. Names, glyphs or
 anything else that picks out a viewer, typing indicators and "someone is
 writing" stay out.
 
+Each line does carry its writer's handle in small ink beside the date: the
+seal's character and four characters of a one-way hash of the browser's
+token, such as 鑑·4f2a. Twelve generated glyphs collide too often to tell two
+people apart, and the scroll has to, so that only you can change your own
+seal and the server's log can say who wrote what. The handle names who
+*wrote*, never who is looking.
+
 A visitor can carve their own seal before their first line, by tracing the
 old small-seal form of one character from a fixed set over a faint guide.
 That is still not a profile or an avatar: there's no name, the character
@@ -87,7 +94,11 @@ page in under a second, escaped, marked as yours only where you wrote it,
 and never lost or doubled across a reconnect; that 過眼 counts browsers, not
 tabs, and carries nothing but the number; that the write limits hold; that
 seals never land on the figure, the pine, the rocks or the title panel; and
-that a carved seal has to follow its guide. Whether the tone of what accumulates actually reads
+that a carved seal has to follow its guide. And it checks crit 10's
+question, with two visitors in separate cookie jars: they get different
+handles, the page and the provenance log name them the same way, neither can
+change the other's seal, nobody can edit or delete a line, and no log line
+carries a token, an address or a line's text. Whether the tone of what accumulates actually reads
 like a colophon — considered, brief, worth adding to a shared object — rather
 than chat is not something a test can check; that's for whoever reads the
 margin to judge.

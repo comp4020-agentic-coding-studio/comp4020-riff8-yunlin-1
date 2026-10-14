@@ -68,5 +68,10 @@ what has to change first, in the same commit.
 - A colophon becomes HTML in one place, `renderColophon`, for the page and the
   live event alike. No event ever carries a seal token, and no IP address is
   ever written to the database.
+- Every action logs one `provenance` line through `src/provenance.ts`,
+  naming the visitor by their handle (`handle` in `src/seal.ts`), the same
+  words the page shows beside their seal. Never log a token, an IP address,
+  a colophon's text, or a page view. The handle never takes `--seal`, and
+  never appears anywhere that shows who is looking.
 - When a check finds a real bug, the fix is a new `spec/` test or a rule in
   this file, not just a patched line with no trace of what went wrong.
